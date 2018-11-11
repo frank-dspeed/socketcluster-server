@@ -1,8 +1,7 @@
 var SCServerSocket = require('./scserversocket');
+var IterableAsyncStream = require('iterable-async-stream');
 var AuthEngine = require('sc-auth').AuthEngine;
 var formatter = require('sc-formatter');
-var EventEmitter = require('events').EventEmitter;
-var Emitter = require('component-emitter');
 var base64id = require('base64id');
 var async = require('async');
 var url = require('url');
@@ -26,8 +25,6 @@ var ServerProtocolError = scErrors.ServerProtocolError;
 var SCServer = function (options) {
   var self = this;
 
-  EventEmitter.call(this);
-
   var opts = {
     brokerEngine: new SCSimpleBroker(),
     wsEngine: 'ws',
@@ -50,6 +47,7 @@ var SCServer = function (options) {
   };
 
   this.options = Object.assign(opts, options);
+  this.listeners = {}; // TODO 2
 
   this.MIDDLEWARE_HANDSHAKE_WS = 'handshakeWS';
   this.MIDDLEWARE_HANDSHAKE_SC = 'handshakeSC';
@@ -188,7 +186,25 @@ var SCServer = function (options) {
   this.wsServer.on('connection', this._handleSocketConnection.bind(this));
 };
 
-SCServer.prototype = Object.create(EventEmitter.prototype);
+SCServer.prototype.listener = function (eventName) {
+  var currentListener = this.listeners[eventName];
+  if (!currentListener) {
+    currentListener = new IterableAsyncStream();
+    this.listeners[eventName] = currentListener;
+  }
+  return currentListener;
+};
+
+SCServer.prototype.destroyListener = function (eventName) {
+  delete this.listeners[eventName];
+};
+
+SCServer.prototype.emit = function (event, data) {
+  var listener = this.listeners[event];
+  if (listener) {
+    listener.write(data);
+  }
+};
 
 SCServer.prototype.setAuthEngine = function (authEngine) {
   this.auth = authEngine;
@@ -254,8 +270,15 @@ SCServer.prototype._subscribeSocket = function (socket, channelOptions, callback
       delete socket.channelSubscriptions[channelName];
       socket.channelSubscriptionsCount--;
     } else {
-      socket.emit('subscribe', channelName, channelOptions);
-      this.emit('subscription', socket, channelName, channelOptions);
+      socket.emit('subscribe', {
+        channel: channelName,
+        subscribeOptions: channelOptions
+      });
+      this.emit('subscription', {
+        socket,
+        channel: channelName,
+        subscribeOptions: channelOptions
+      });
     }
     callback && callback(err);
   });
@@ -282,8 +305,8 @@ SCServer.prototype._unsubscribeSocket = function (socket, channel) {
 
   this.brokerEngine.unsubscribeSocket(socket, channel);
 
-  socket.emit('unsubscribe', channel);
-  this.emit('unsubscription', socket, channel);
+  socket.emit('unsubscribe', {channel});
+  this.emit('unsubscription', {socket, channel});
 };
 
 SCServer.prototype._processTokenError = function (err) {
@@ -315,8 +338,15 @@ SCServer.prototype._emitBadAuthTokenError = function (scSocket, error, signedAut
     authError: error,
     signedAuthToken: signedAuthToken
   };
-  scSocket.emit('badAuthToken', badAuthStatus);
-  this.emit('badSocketAuthToken', scSocket, badAuthStatus);
+  scSocket.emit('badAuthToken', {
+    authError: error,
+    signedAuthToken: signedAuthToken
+  });
+  this.emit('badSocketAuthToken', {
+    socket: scSocket,
+    authError: error,
+    signedAuthToken: signedAuthToken
+  });
 };
 
 SCServer.prototype._processAuthToken = function (scSocket, signedAuthToken, callback) {
@@ -519,14 +549,38 @@ SCServer.prototype._handleSocketConnection = function (wsSocket, upgradeReq) {
     this._unsubscribeSocketFromAllChannels(scSocket);
 
     if (type === 'disconnect') {
-      this.emit('_disconnection', scSocket, code, data);
-      this.emit('disconnection', scSocket, code, data);
+      this.emit('_disconnection', {
+        socket: scSocket,
+        code,
+        data
+      });
+      this.emit('disconnection', {
+        socket: scSocket,
+        code,
+        data
+      });
     } else if (type === 'abort') {
-      this.emit('_connectionAbort', scSocket, code, data);
-      this.emit('connectionAbort', scSocket, code, data);
+      this.emit('_connectionAbort', {
+        socket: scSocket,
+        code,
+        data
+      });
+      this.emit('connectionAbort', {
+        socket: scSocket,
+        code,
+        data
+      });
     }
-    this.emit('_closure', scSocket, code, data);
-    this.emit('closure', scSocket, code, data);
+    this.emit('_closure', {
+      socket: scSocket,
+      code,
+      data
+    });
+    this.emit('closure', {
+      socket: scSocket,
+      code,
+      data
+    });
   };
 
   scSocket.once('_disconnect', cleanupSocket.bind(scSocket, 'disconnect'));
@@ -592,8 +646,8 @@ SCServer.prototype._handleSocketConnection = function (wsSocket, upgradeReq) {
         scSocket.emit('connect', serverSocketStatus);
         scSocket.emit('_connect', serverSocketStatus);
 
-        this.emit('_connection', scSocket, serverSocketStatus);
-        this.emit('connection', scSocket, serverSocketStatus);
+        this.emit('_connection', scSocket);
+        this.emit('connection', scSocket);
 
         if (clientSocketStatus.isAuthenticated) {
           scSocket.triggerAuthenticationEvents(oldState);
@@ -610,9 +664,18 @@ SCServer.prototype._handleSocketConnection = function (wsSocket, upgradeReq) {
   this.emit('handshake', scSocket);
 };
 
+// TODO 2: Check if wsServer.close can send back error or not
 SCServer.prototype.close = function () {
   this.isReady = false;
-  this.wsServer.close.apply(this.wsServer, arguments);
+  return new Promise((resolve, reject) => {
+    this.wsServer.close((err) => {
+      if (err) {
+        reject(err);
+        return;
+      }
+      resolve();
+    });
+  });
 };
 
 SCServer.prototype.getPath = function () {
