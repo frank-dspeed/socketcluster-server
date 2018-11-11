@@ -11,6 +11,7 @@
     "async": "2.3.0",
     "base64id": "1.0.0",
     "component-emitter": "1.2.1",
+    "iterable-async-stream": "^1.0.0",
     "lodash.clonedeep": "4.5.0",
     "sc-auth": "^5.0.2",
     "sc-errors": "^1.4.1",

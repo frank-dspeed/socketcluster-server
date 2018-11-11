@@ -1,5 +1,5 @@
 var cloneDeep = require('lodash.clonedeep');
-var Emitter = require('component-emitter');
+var IterableAsyncStream = require('iterable-async-stream');
 var Response = require('./response').Response;
 
 var scErrors = require('sc-errors');
@@ -11,9 +11,7 @@ var AuthError = scErrors.AuthError;
 
 
 var SCServerSocket = function (id, server, socket) {
-  Emitter.call(this);
-
-  this._autoAckEvents = {
+  this._autoAckRPCs = {
     '#publish': 1
   };
 
@@ -23,6 +21,9 @@ var SCServerSocket = function (id, server, socket) {
   this.state = this.CONNECTING;
   this.authState = this.UNAUTHENTICATED;
   this.active = true;
+  this.listeners = {};
+  this.receivers = {};
+  this.procedures = {};
 
   this.request = this.socket.upgradeReq || {};
 
@@ -92,16 +93,14 @@ var SCServerSocket = function (id, server, socket) {
       if (Array.isArray(obj)) {
         var len = obj.length;
         for (var i = 0; i < len; i++) {
-          this._handleEventObject(obj[i], message);
+          this._handleTransmittedEventObject(obj[i], message);
         }
       } else {
-        this._handleEventObject(obj, message);
+        this._handleTransmittedEventObject(obj, message);
       }
     }
   });
 };
-
-SCServerSocket.prototype = Object.create(Emitter.prototype);
 
 SCServerSocket.CONNECTING = SCServerSocket.prototype.CONNECTING = 'connecting';
 SCServerSocket.OPEN = SCServerSocket.prototype.OPEN = 'open';
@@ -113,33 +112,103 @@ SCServerSocket.UNAUTHENTICATED = SCServerSocket.prototype.UNAUTHENTICATED = 'una
 SCServerSocket.ignoreStatuses = scErrors.socketProtocolIgnoreStatuses;
 SCServerSocket.errorStatuses = scErrors.socketProtocolErrorStatuses;
 
+SCServerSocket.prototype.receiver = function (eventName) {
+  var currentReceiver = this.receivers[eventName];
+  if (!currentReceiver) {
+    currentReceiver = new IterableAsyncStream();
+    this.receivers[eventName] = currentReceiver;
+  }
+  return currentReceiver;
+};
+
+SCServerSocket.prototype.destroyReceiver = function (eventName) {
+  delete this.receivers[eventName];
+};
+
+SCServerSocket.prototype.procedure = function (procedureName) {
+  var currentProcedure = this.procedures[procedureName];
+  if (!currentProcedure) {
+    currentProcedure = new IterableAsyncStream();
+    this.procedures[procedureName] = currentProcedure;
+  }
+  return currentProcedure;
+};
+
+SCServerSocket.prototype.listener = function (eventName) {
+  var currentListener = this.listeners[eventName];
+  if (!currentListener) {
+    currentListener = new IterableAsyncStream();
+    this.listeners[eventName] = currentListener;
+  }
+  return currentListener;
+};
+
+SCServerSocket.prototype.destroyListener = function (eventName) {
+  delete this.listeners[eventName];
+};
+
+SCServerSocket.prototype.emit = function (event, data) {
+  var listener = this.listeners[event];
+  if (listener) {
+    listener.write(data);
+  }
+};
+
 SCServerSocket.prototype._sendPing = function () {
   if (this.state !== this.CLOSED) {
     this.sendObject('#1');
   }
 };
 
-SCServerSocket.prototype._handleEventObject = function (obj, message) {
+SCServerSocket.prototype._handleTransmittedEventObject = function (obj, message) {
   if (obj && obj.event != null) {
     var eventName = obj.event;
 
-    var response = new Response(this, obj.cid);
-    this.server.verifyInboundEvent(this, eventName, obj.data, (err, newEventData, ackData) => {
-      if (err) {
-        response.error(err, ackData);
-      } else {
-        if (this._autoAckEvents[eventName]) {
-          if (ackData !== undefined) {
-            response.end(ackData);
-          } else {
-            response.end();
+    var requestOptions = {
+      socket: this,
+      event: eventName,
+      data: obj.data,
+    };
+
+    if (obj.cid == null) {
+      this.server.verifyInboundTransmittedEvent(requestOptions, (err, newEventData) => {
+        if (!err) {
+          var receiver = this.receivers[eventName];
+          if (receiver) {
+            receiver.write(newEventData);
           }
-          this.emit(eventName, newEventData);
-        } else {
-          this.emit(eventName, newEventData, response.callback.bind(response));
         }
-      }
-    });
+      });
+    } else {
+      requestOptions.cid = obj.cid;
+      var response = new Response(this, requestOptions.cid);
+      this.server.verifyInboundTransmittedEvent(requestOptions, (err, newEventData, ackData) => {
+        if (err) {
+          response.error(err); // TODO 2: No longer passing ackData as second param to response.error(err, ackData); check that it still works on client side.
+        } else {
+          if (this._autoAckRPCs[eventName]) {
+            if (ackData !== undefined) {
+              response.end(ackData);
+            } else {
+              response.end();
+            }
+          } else {
+            var procedure = this.procedures[eventName];
+            if (procedure) {
+              procedure.write({
+                data: newEventData,
+                end: (data) => {
+                  response.end(data);
+                },
+                error: (err) => {
+                  response.error(err);
+                }
+              });
+            }
+          }
+        }
+      });
+    }
   } else if (obj && obj.rid != null) {
     // If incoming message is a response to a previously sent message
     var ret = this._callbackMap[obj.rid];
@@ -188,16 +257,16 @@ SCServerSocket.prototype._onSCClose = function (code, data) {
 
     if (prevState === this.CONNECTING) {
       // Private connectAbort event for internal use only
-      this.emit('_connectAbort', code, data);
-      this.emit('connectAbort', code, data);
+      this.emit('_connectAbort', {code, data});
+      this.emit('connectAbort', {code, data});
     } else {
       // Private disconnect event for internal use only
-      this.emit('_disconnect', code, data);
-      this.emit('disconnect', code, data);
+      this.emit('_disconnect', {code, data});
+      this.emit('disconnect', {code, data});
     }
     // Private close event for internal use only
-    this.emit('_close', code, data);
-    this.emit('close', code, data);
+    this.emit('_close', {code, data});
+    this.emit('close', {code, data});
 
     if (!SCServerSocket.ignoreStatuses[code]) {
       var closeMessage;
@@ -375,10 +444,16 @@ SCServerSocket.prototype.triggerAuthenticationEvents = function (oldState) {
       authToken: this.authToken
     };
     this.emit('authStateChange', stateChangeData);
-    this.server.emit('authenticationStateChange', this, stateChangeData);
+    this.server.emit('authenticationStateChange', {
+      socket: this, // TODO 2: Maybe expand stateChangeData into the top level. Also, consider doing this for all places in the code where socket is a property.
+      status: stateChangeData
+    });
   }
   this.emit('authenticate', this.authToken);
-  this.server.emit('authentication', this, this.authToken);
+  this.server.emit('authentication', {
+    socket: this,
+    authToken: this.authToken
+  });
 };
 
 SCServerSocket.prototype.setAuthToken = function (data, options) {
@@ -506,10 +581,16 @@ SCServerSocket.prototype.deauthenticateSelf = function () {
       newState: this.authState
     };
     this.emit('authStateChange', stateChangeData);
-    this.server.emit('authenticationStateChange', this, stateChangeData);
+    this.server.emit('authenticationStateChange', {
+      socket: this,
+      status: stateChangeData
+    });
   }
   this.emit('deauthenticate', oldToken);
-  this.server.emit('deauthentication', this, oldToken);
+  this.server.emit('deauthentication', {
+    socket: this,
+    oldToken
+  });
 };
 
 SCServerSocket.prototype.deauthenticate = function () {
@@ -522,12 +603,12 @@ SCServerSocket.prototype.kickOut = function (channel, message) {
     Object.keys(this.channelSubscriptions).forEach((channelName) => {
       delete this.channelSubscriptions[channelName];
       this.channelSubscriptionsCount--;
-      this.emit('#kickOut', {message: message, channel: channelName});
+      this.transmit('#kickOut', {message: message, channel: channelName});
     });
   } else {
     delete this.channelSubscriptions[channel];
     this.channelSubscriptionsCount--;
-    this.emit('#kickOut', {message: message, channel: channel});
+    this.transmit('#kickOut', {message: message, channel: channel});
   }
   return this.server.brokerEngine.unsubscribeSocket(this, channel);
 };

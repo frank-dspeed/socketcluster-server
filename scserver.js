@@ -23,8 +23,6 @@ var ServerProtocolError = scErrors.ServerProtocolError;
 
 
 var SCServer = function (options) {
-  var self = this;
-
   var opts = {
     brokerEngine: new SCSimpleBroker(),
     wsEngine: 'ws',
@@ -51,7 +49,8 @@ var SCServer = function (options) {
 
   this.MIDDLEWARE_HANDSHAKE_WS = 'handshakeWS';
   this.MIDDLEWARE_HANDSHAKE_SC = 'handshakeSC';
-  this.MIDDLEWARE_EMIT = 'emit';
+  this.MIDDLEWARE_TRANSMIT = 'transmit';
+  this.MIDDLEWARE_INVOKE = 'invoke';
   this.MIDDLEWARE_SUBSCRIBE = 'subscribe';
   this.MIDDLEWARE_PUBLISH_IN = 'publishIn';
   this.MIDDLEWARE_PUBLISH_OUT = 'publishOut';
@@ -63,7 +62,8 @@ var SCServer = function (options) {
   this._middleware = {};
   this._middleware[this.MIDDLEWARE_HANDSHAKE_WS] = [];
   this._middleware[this.MIDDLEWARE_HANDSHAKE_SC] = [];
-  this._middleware[this.MIDDLEWARE_EMIT] = [];
+  this._middleware[this.MIDDLEWARE_TRANSMIT] = [];
+  this._middleware[this.MIDDLEWARE_INVOKE] = [];
   this._middleware[this.MIDDLEWARE_SUBSCRIBE] = [];
   this._middleware[this.MIDDLEWARE_PUBLISH_IN] = [];
   this._middleware[this.MIDDLEWARE_PUBLISH_OUT] = [];
@@ -702,7 +702,7 @@ SCServer.prototype.removeMiddleware = function (type, middleware) {
   });
 };
 
-SCServer.prototype.verifyHandshake = function (info, cb) {
+SCServer.prototype.verifyHandshake = function (info, callback) {
   var req = info.req;
   var origin = info.origin;
   if (origin === 'null' || origin == null) {
@@ -737,19 +737,19 @@ SCServer.prototype.verifyHandshake = function (info, cb) {
             } else if (this.middlewareEmitWarnings) {
               this.emit('warning', err);
             }
-            cb(false, 401, err);
+            callback(false, 401, err);
           } else {
-            cb(true);
+            callback(true);
           }
         }
       });
     } else {
-      cb(true);
+      callback(true);
     }
   } else {
     var err = new ServerProtocolError('Failed to authorize socket handshake - Invalid origin: ' + origin);
     this.emit('warning', err);
-    cb(false, 403, err);
+    callback(false, 403, err);
   }
 };
 
@@ -757,21 +757,15 @@ SCServer.prototype._isPrivateTransmittedEvent = function (event) {
   return typeof event === 'string' && event.indexOf('#') === 0;
 };
 
-SCServer.prototype.verifyInboundEvent = function (socket, eventName, eventData, cb) {
-  var request = {
-    socket: socket,
-    event: eventName,
-    data: eventData
-  };
-
+SCServer.prototype.verifyInboundTransmittedEvent = function (requestOptions, cb) {
   var token = socket.getAuthToken();
   if (this.isAuthTokenExpired(token)) {
-    request.authTokenExpiredError = new AuthTokenExpiredError('The socket auth token has expired', token.exp);
+    requestOptions.authTokenExpiredError = new AuthTokenExpiredError('The socket auth token has expired', token.exp);
 
     socket.deauthenticate();
   }
 
-  this._passThroughMiddleware(request, cb);
+  this._passThroughMiddleware(requestOptions, cb);
 };
 
 SCServer.prototype.isAuthTokenExpired = function (token) {
@@ -783,7 +777,7 @@ SCServer.prototype.isAuthTokenExpired = function (token) {
   return false;
 };
 
-SCServer.prototype._passThroughMiddleware = function (options, cb) {
+SCServer.prototype._passThroughMiddleware = function (options, callback) {
   var callbackInvoked = false;
 
   var request = {
@@ -796,120 +790,148 @@ SCServer.prototype._passThroughMiddleware = function (options, cb) {
 
   var event = options.event;
 
-  if (this._isPrivateTransmittedEvent(event)) {
-    if (event === '#subscribe') {
-      var eventData = options.data || {};
-      request.channel = eventData.channel;
-      request.waitForAuth = eventData.waitForAuth;
-      request.data = eventData.data;
-
-      if (request.waitForAuth && request.authTokenExpiredError) {
-        // If the channel has the waitForAuth flag set, then we will handle the expiry quietly
-        // and we won't pass this request through the subscribe middleware.
-        cb(request.authTokenExpiredError, eventData);
-      } else {
-        async.applyEachSeries(this._middleware[this.MIDDLEWARE_SUBSCRIBE], request,
-          (err) => {
-            if (callbackInvoked) {
-              this.emit('warning', new InvalidActionError('Callback for ' + this.MIDDLEWARE_SUBSCRIBE + ' middleware was already invoked'));
-            } else {
-              callbackInvoked = true;
-              if (err) {
-                if (err === true || err.silent) {
-                  err = new SilentMiddlewareBlockedError('Action was silently blocked by ' + this.MIDDLEWARE_SUBSCRIBE + ' middleware', this.MIDDLEWARE_SUBSCRIBE);
-                } else if (this.middlewareEmitWarnings) {
-                  this.emit('warning', err);
-                }
-              }
-              if (request.data !== undefined) {
-                eventData.data = request.data;
-              }
-              cb(err, eventData);
-            }
-          }
-        );
-      }
-    } else if (event === '#publish') {
-      if (this.allowClientPublish) {
-        var eventData = options.data || {};
-        request.channel = eventData.channel;
-        request.data = eventData.data;
-
-        async.applyEachSeries(this._middleware[this.MIDDLEWARE_PUBLISH_IN], request,
-          (err) => {
-            if (callbackInvoked) {
-              this.emit('warning', new InvalidActionError('Callback for ' + this.MIDDLEWARE_PUBLISH_IN + ' middleware was already invoked'));
-            } else {
-              callbackInvoked = true;
-              if (request.data !== undefined) {
-                eventData.data = request.data;
-              }
-              if (err) {
-                if (err === true || err.silent) {
-                  err = new SilentMiddlewareBlockedError('Action was silently blocked by ' + this.MIDDLEWARE_PUBLISH_IN + ' middleware', this.MIDDLEWARE_PUBLISH_IN);
-                } else if (this.middlewareEmitWarnings) {
-                  this.emit('warning', err);
-                }
-                cb(err, eventData, request.ackData);
-              } else {
-                if (typeof request.channel !== 'string') {
-                  err = new BrokerError('Socket ' + request.socket.id + ' tried to publish to an invalid ' + request.channel + ' channel');
-                  this.emit('warning', err);
-                  cb(err, eventData, request.ackData);
-                  return;
-                }
-                this.exchange.publish(request.channel, request.data)
-                .then(() => {
-                  return null;
-                })
-                .catch((err) => {
-                  return err;
-                })
-                .then((err) => {
-                  if (err) {
-                    this.emit('warning', err);
-                  }
-                  cb(err, eventData, request.ackData);
-                });
-              }
-            }
-          }
-        );
-      } else {
-        var noPublishError = new InvalidActionError('Client publish feature is disabled');
-        this.emit('warning', noPublishError);
-        cb(noPublishError, options.data);
-      }
+  if (options.cid == null) {
+    // If transmit.
+    if (this._isPrivateTransmittedEvent(event)) {
+      callback(null, options.data);
     } else {
-      // Do not allow blocking other reserved events or it could interfere with SC behaviour
-      cb(null, options.data);
+      request.event = event;
+      request.data = options.data;
+
+      async.applyEachSeries(this._middleware[this.MIDDLEWARE_TRANSMIT], request,
+        (err) => {
+          if (callbackInvoked) {
+            this.emit('warning', new InvalidActionError('Callback for ' + this.MIDDLEWARE_TRANSMIT + ' middleware was already invoked'));
+          } else {
+            callbackInvoked = true;
+            if (err) {
+              if (err === true || err.silent) {
+                err = new SilentMiddlewareBlockedError('Action was silently blocked by ' + this.MIDDLEWARE_TRANSMIT + ' middleware', this.MIDDLEWARE_TRANSMIT);
+              } else if (this.middlewareEmitWarnings) {
+                this.emit('warning', err);
+              }
+            }
+            callback(err, request.data);
+          }
+        }
+      );
     }
   } else {
-    request.event = event;
-    request.data = options.data;
+    // If invoke/RPC.
+    if (this._isPrivateTransmittedEvent(event)) {
+      if (event === '#subscribe') {
+        var eventData = options.data || {};
+        request.channel = eventData.channel;
+        request.waitForAuth = eventData.waitForAuth;
+        request.data = eventData.data;
 
-    async.applyEachSeries(this._middleware[this.MIDDLEWARE_EMIT], request,
-      (err) => {
-        if (callbackInvoked) {
-          this.emit('warning', new InvalidActionError('Callback for ' + this.MIDDLEWARE_EMIT + ' middleware was already invoked'));
+        if (request.waitForAuth && request.authTokenExpiredError) {
+          // If the channel has the waitForAuth flag set, then we will handle the expiry quietly
+          // and we won't pass this request through the subscribe middleware.
+          callback(request.authTokenExpiredError, eventData);
         } else {
-          callbackInvoked = true;
-          if (err) {
-            if (err === true || err.silent) {
-              err = new SilentMiddlewareBlockedError('Action was silently blocked by ' + this.MIDDLEWARE_EMIT + ' middleware', this.MIDDLEWARE_EMIT);
-            } else if (this.middlewareEmitWarnings) {
-              this.emit('warning', err);
+          async.applyEachSeries(this._middleware[this.MIDDLEWARE_SUBSCRIBE], request,
+            (err) => {
+              if (callbackInvoked) {
+                this.emit('warning', new InvalidActionError('Callback for ' + this.MIDDLEWARE_SUBSCRIBE + ' middleware was already invoked'));
+              } else {
+                callbackInvoked = true;
+                if (err) {
+                  if (err === true || err.silent) {
+                    err = new SilentMiddlewareBlockedError('Action was silently blocked by ' + this.MIDDLEWARE_SUBSCRIBE + ' middleware', this.MIDDLEWARE_SUBSCRIBE);
+                  } else if (this.middlewareEmitWarnings) {
+                    this.emit('warning', err);
+                  }
+                }
+                if (request.data !== undefined) {
+                  eventData.data = request.data;
+                }
+                callback(err, eventData);
+              }
             }
-          }
-          cb(err, request.data);
+          );
         }
+      } else if (event === '#publish') {
+        if (this.allowClientPublish) {
+          var eventData = options.data || {};
+          request.channel = eventData.channel;
+          request.data = eventData.data;
+
+          async.applyEachSeries(this._middleware[this.MIDDLEWARE_PUBLISH_IN], request,
+            (err) => {
+              if (callbackInvoked) {
+                this.emit('warning', new InvalidActionError('Callback for ' + this.MIDDLEWARE_PUBLISH_IN + ' middleware was already invoked'));
+              } else {
+                callbackInvoked = true;
+                if (request.data !== undefined) {
+                  eventData.data = request.data;
+                }
+                if (err) {
+                  if (err === true || err.silent) {
+                    err = new SilentMiddlewareBlockedError('Action was silently blocked by ' + this.MIDDLEWARE_PUBLISH_IN + ' middleware', this.MIDDLEWARE_PUBLISH_IN);
+                  } else if (this.middlewareEmitWarnings) {
+                    this.emit('warning', err);
+                  }
+                  callback(err, eventData, request.ackData);
+                } else {
+                  if (typeof request.channel !== 'string') {
+                    err = new BrokerError('Socket ' + request.socket.id + ' tried to publish to an invalid ' + request.channel + ' channel');
+                    this.emit('warning', err);
+                    callback(err, eventData, request.ackData);
+                    return;
+                  }
+                  this.exchange.publish(request.channel, request.data)
+                  .then(() => {
+                    return null;
+                  })
+                  .catch((err) => {
+                    return err;
+                  })
+                  .then((err) => {
+                    if (err) {
+                      this.emit('warning', err);
+                    }
+                    callback(err, eventData, request.ackData);
+                  });
+                }
+              }
+            }
+          );
+        } else {
+          var noPublishError = new InvalidActionError('Client publish feature is disabled');
+          this.emit('warning', noPublishError);
+          callback(noPublishError, options.data);
+        }
+      } else {
+        // Do not allow blocking other reserved events or it could interfere with SC behaviour
+        callback(null, options.data);
       }
-    );
+    } else {
+      request.event = event;
+      request.data = options.data;
+
+      async.applyEachSeries(this._middleware[this.MIDDLEWARE_INVOKE], request,
+        (err) => {
+          if (callbackInvoked) {
+            this.emit('warning', new InvalidActionError('Callback for ' + this.MIDDLEWARE_INVOKE + ' middleware was already invoked'));
+          } else {
+            callbackInvoked = true;
+            if (err) {
+              if (err === true || err.silent) {
+                err = new SilentMiddlewareBlockedError('Action was silently blocked by ' + this.MIDDLEWARE_INVOKE + ' middleware', this.MIDDLEWARE_INVOKE);
+              } else if (this.middlewareEmitWarnings) {
+                this.emit('warning', err);
+              }
+            }
+            callback(err, request.data);
+          }
+        }
+      );
+    }
   }
 };
 
-SCServer.prototype._passThroughAuthenticateMiddleware = function (options, cb) {
-  var self = this;
+SCServer.prototype._passThroughAuthenticateMiddleware = function (options, callback) {
   var callbackInvoked = false;
 
   var request = {
@@ -920,7 +942,7 @@ SCServer.prototype._passThroughAuthenticateMiddleware = function (options, cb) {
   async.applyEachSeries(this._middleware[this.MIDDLEWARE_AUTHENTICATE], request,
     (err, results) => {
       if (callbackInvoked) {
-        self.emit('warning', new InvalidActionError('Callback for ' + self.MIDDLEWARE_AUTHENTICATE + ' middleware was already invoked'));
+        this.emit('warning', new InvalidActionError('Callback for ' + this.MIDDLEWARE_AUTHENTICATE + ' middleware was already invoked'));
       } else {
         callbackInvoked = true;
         var isBadToken = false;
@@ -929,19 +951,18 @@ SCServer.prototype._passThroughAuthenticateMiddleware = function (options, cb) {
         }
         if (err) {
           if (err === true || err.silent) {
-            err = new SilentMiddlewareBlockedError('Action was silently blocked by ' + self.MIDDLEWARE_AUTHENTICATE + ' middleware', self.MIDDLEWARE_AUTHENTICATE);
-          } else if (self.middlewareEmitWarnings) {
-            self.emit('warning', err);
+            err = new SilentMiddlewareBlockedError('Action was silently blocked by ' + this.MIDDLEWARE_AUTHENTICATE + ' middleware', this.MIDDLEWARE_AUTHENTICATE);
+          } else if (this.middlewareEmitWarnings) {
+            this.emit('warning', err);
           }
         }
-        cb(err, isBadToken);
+        callback(err, isBadToken);
       }
     }
   );
 };
 
-SCServer.prototype._passThroughHandshakeSCMiddleware = function (options, cb) {
-  var self = this;
+SCServer.prototype._passThroughHandshakeSCMiddleware = function (options, callback) {
   var callbackInvoked = false;
 
   var request = {
@@ -951,7 +972,7 @@ SCServer.prototype._passThroughHandshakeSCMiddleware = function (options, cb) {
   async.applyEachSeries(this._middleware[this.MIDDLEWARE_HANDSHAKE_SC], request,
     (err, results) => {
       if (callbackInvoked) {
-        self.emit('warning', new InvalidActionError('Callback for ' + self.MIDDLEWARE_HANDSHAKE_SC + ' middleware was already invoked'));
+        this.emit('warning', new InvalidActionError('Callback for ' + this.MIDDLEWARE_HANDSHAKE_SC + ' middleware was already invoked'));
       } else {
         callbackInvoked = true;
         var statusCode;
@@ -965,20 +986,18 @@ SCServer.prototype._passThroughHandshakeSCMiddleware = function (options, cb) {
             statusCode = err.statusCode;
           }
           if (err === true || err.silent) {
-            err = new SilentMiddlewareBlockedError('Action was silently blocked by ' + self.MIDDLEWARE_HANDSHAKE_SC + ' middleware', self.MIDDLEWARE_HANDSHAKE_SC);
-          } else if (self.middlewareEmitWarnings) {
-            self.emit('warning', err);
+            err = new SilentMiddlewareBlockedError('Action was silently blocked by ' + this.MIDDLEWARE_HANDSHAKE_SC + ' middleware', this.MIDDLEWARE_HANDSHAKE_SC);
+          } else if (this.middlewareEmitWarnings) {
+            this.emit('warning', err);
           }
         }
-        cb(err, statusCode);
+        callback(err, statusCode);
       }
     }
   );
 };
 
-SCServer.prototype.verifyOutboundEvent = function (socket, eventName, eventData, options, cb) {
-  var self = this;
-
+SCServer.prototype.verifyOutboundEvent = function (socket, eventName, eventData, options, callback) {
   var callbackInvoked = false;
 
   if (eventName === '#publish') {
@@ -990,7 +1009,7 @@ SCServer.prototype.verifyOutboundEvent = function (socket, eventName, eventData,
     async.applyEachSeries(this._middleware[this.MIDDLEWARE_PUBLISH_OUT], request,
       (err) => {
         if (callbackInvoked) {
-          self.emit('warning', new InvalidActionError('Callback for ' + self.MIDDLEWARE_PUBLISH_OUT + ' middleware was already invoked'));
+          this.emit('warning', new InvalidActionError('Callback for ' + this.MIDDLEWARE_PUBLISH_OUT + ' middleware was already invoked'));
         } else {
           callbackInvoked = true;
           if (request.data !== undefined) {
@@ -998,22 +1017,22 @@ SCServer.prototype.verifyOutboundEvent = function (socket, eventName, eventData,
           }
           if (err) {
             if (err === true || err.silent) {
-              err = new SilentMiddlewareBlockedError('Action was silently blocked by ' + self.MIDDLEWARE_PUBLISH_OUT + ' middleware', self.MIDDLEWARE_PUBLISH_OUT);
-            } else if (self.middlewareEmitWarnings) {
-              self.emit('warning', err);
+              err = new SilentMiddlewareBlockedError('Action was silently blocked by ' + this.MIDDLEWARE_PUBLISH_OUT + ' middleware', this.MIDDLEWARE_PUBLISH_OUT);
+            } else if (this.middlewareEmitWarnings) {
+              this.emit('warning', err);
             }
-            cb(err, eventData);
+            callback(err, eventData);
           } else {
             if (options && request.useCache) {
               options.useCache = true;
             }
-            cb(null, eventData);
+            callback(null, eventData);
           }
         }
       }
     );
   } else {
-    cb(null, eventData);
+    callback(null, eventData);
   }
 };
 
