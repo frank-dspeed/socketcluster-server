@@ -90,6 +90,7 @@ var SCServer = function (options) {
   this._path = opts.path.replace(/\/?$/, '/').replace(/^\/?/, '/');
   this.isReady = false;
 
+  // TODO 2: Implement IterableAsyncStream in sc-broker and sc-broker-cluster.
   this.brokerEngine.once('ready', () => {
     this.isReady = true;
     this.emit('ready');
@@ -221,10 +222,11 @@ SCServer.prototype._handleServerError = function (error) {
   this.emit('error', error);
 };
 
-SCServer.prototype._handleSocketError = function (error) {
-  // We don't want to crash the entire worker on socket error
-  // so we emit it as a warning instead.
-  this.emit('warning', error);
+SCServer.prototype._handleSocketErrors = async function (socket) {
+  // A socket error will show up as a warning on the server.
+  for await (let error of socket.listener('error')) {
+    this.emit('warning', error);
+  }
 };
 
 SCServer.prototype._handleHandshakeTimeout = function (scSocket) {
@@ -441,88 +443,101 @@ SCServer.prototype._handleSocketConnection = function (wsSocket, upgradeReq) {
   var scSocket = new SCServerSocket(id, this, wsSocket);
   scSocket.exchange = this.exchange;
 
-  scSocket.on('error', (err) => {
-    this._handleSocketError(err);
-  });
+  this._handleSocketErrors(scSocket);
 
   this.pendingClients[id] = scSocket;
   this.pendingClientsCount++;
 
-  scSocket.on('#authenticate', (signedAuthToken, respond) => {
-    this._processAuthToken(scSocket, signedAuthToken, (err, isBadToken, oldState) => {
-      if (err) {
-        if (isBadToken) {
-          scSocket.deauthenticate();
-        }
-      } else {
-        scSocket.triggerAuthenticationEvents(oldState);
-      }
-      var authStatus = {
-        isAuthenticated: !!scSocket.authToken,
-        authError: scErrors.dehydrateError(err)
-      };
-      if (err && isBadToken) {
-        respond(err, authStatus);
-      } else {
-        respond(null, authStatus);
-      }
-    });
-  });
-
-  scSocket.on('#removeAuthToken', () => {
-    scSocket.deauthenticateSelf();
-  });
-
-  scSocket.on('#subscribe', (channelOptions, res) => {
-    if (!channelOptions) {
-      channelOptions = {};
-    } else if (typeof channelOptions === 'string') {
-      channelOptions = {
-        channel: channelOptions
-      };
-    }
-    // This is an invalid state; it means the client tried to subscribe before
-    // having completed the handshake.
-    if (scSocket.state === scSocket.OPEN) {
-      this._subscribeSocket(scSocket, channelOptions, (err) => {
+  async function handleSocketAuthenticate() {
+    for await (let rpc of scSocket.procedure('#authenticate')) {
+      let signedAuthToken = rpc.data;
+      this._processAuthToken(scSocket, signedAuthToken, (err, isBadToken, oldState) => {
         if (err) {
-          var error = new BrokerError('Failed to subscribe socket to the ' + channelOptions.channel + ' channel - ' + err);
-          res(error);
-          scSocket.emit('error', error);
-        } else {
-          if (channelOptions.batch) {
-            res(undefined, undefined, {batch: true});
-          } else {
-            res();
+          if (isBadToken) {
+            scSocket.deauthenticate();
           }
+        } else {
+          scSocket.triggerAuthenticationEvents(oldState);
+        }
+        if (err && isBadToken) {
+          rpc.error(err);
+        } else {
+          var authStatus = {
+            isAuthenticated: !!scSocket.authToken,
+            authError: scErrors.dehydrateError(err)
+          };
+          rpc.end(authStatus);
         }
       });
-    } else {
-      var error = new InvalidActionError('Cannot subscribe socket to a channel before it has completed the handshake');
-      res(error);
-      this.emit('warning', error);
     }
-  });
+  }
+  handleSocketAuthenticate();
 
-  scSocket.on('#unsubscribe', (channel, res) => {
-    var error;
-    try {
-      this._unsubscribeSocket(scSocket, channel);
-    } catch (err) {
-      error = new BrokerError('Failed to unsubscribe socket from the ' + channel + ' channel - ' + err.message);
+  async function handleSocketRemoveAuthToken() {
+    for await (let data of scSocket.receiver('#removeAuthToken')) {
+      scSocket.deauthenticateSelf();
     }
-    if (error) {
-      res(error);
-      scSocket.emit('error', error);
-    } else {
-      res();
+  }
+  handleSocketRemoveAuthToken();
+
+  async function handleSocketSubscribe() {
+    for await (let rpc of scSocket.procedure('#subscribe')) {
+      let channelOptions = rpc.data;
+      if (!channelOptions) {
+        channelOptions = {};
+      } else if (typeof channelOptions === 'string') {
+        channelOptions = {
+          channel: channelOptions
+        };
+      }
+      // This is an invalid state; it means the client tried to subscribe before
+      // having completed the handshake.
+      if (scSocket.state === scSocket.OPEN) {
+        this._subscribeSocket(scSocket, channelOptions, (err) => {
+          if (err) {
+            var error = new BrokerError('Failed to subscribe socket to the ' + channelOptions.channel + ' channel - ' + err);
+            rpc.error(error);
+            scSocket.emit('error', error);
+          } else {
+            if (channelOptions.batch) {
+              rpc.end(undefined, {batch: true});
+            } else {
+              rpc.end();
+            }
+          }
+        });
+      } else {
+        var error = new InvalidActionError('Cannot subscribe socket to a channel before it has completed the handshake');
+        rpc.error(error);
+        this.emit('warning', error);
+      }
     }
-  });
+  }
+  handleSocketSubscribe();
+
+  async function handleSocketUnsubscribe() {
+    for await (let rpc of scSocket.procedure('#unsubscribe')) {
+      let channel = rpc.data;
+      let error;
+      try {
+        this._unsubscribeSocket(scSocket, channel);
+      } catch (err) {
+        error = new BrokerError('Failed to unsubscribe socket from the ' + channel + ' channel - ' + err.message);
+      }
+      if (error) {
+        rpc.error(error);
+        scSocket.emit('error', error);
+      } else {
+        rpc.end();
+      }
+    }
+  }
+  handleSocketUnsubscribe();
 
   var cleanupSocket = (type, code, data) => {
     clearTimeout(scSocket._handshakeTimeoutRef);
 
-    scSocket.off('#handshake');
+    scSocket.off('#handshake'); // TODO 2222222
     scSocket.off('#authenticate');
     scSocket.off('#removeAuthToken');
     scSocket.off('#subscribe');
@@ -583,80 +598,91 @@ SCServer.prototype._handleSocketConnection = function (wsSocket, upgradeReq) {
     });
   };
 
-  scSocket.once('_disconnect', cleanupSocket.bind(scSocket, 'disconnect'));
-  scSocket.once('_connectAbort', cleanupSocket.bind(scSocket, 'abort'));
+  async function handleSocketDisconnect() {
+    let event = await scSocket.listener('_disconnect').once();
+    cleanupSocket('disconnect', event.code, event.data);
+  }
+  handleSocketDisconnect();
+
+  async function handleSocketAbort() {
+    let event = await scSocket.listener('_connectAbort').once();
+    cleanupSocket('abort', event.code, event.data);
+  }
+  handleSocketDisconnect();
 
   scSocket._handshakeTimeoutRef = setTimeout(this._handleHandshakeTimeout.bind(this, scSocket), this.handshakeTimeout);
-  scSocket.once('#handshake', (data, respond) => {
-    if (!data) {
-      data = {};
-    }
-    var signedAuthToken = data.authToken || null;
-    clearTimeout(scSocket._handshakeTimeoutRef);
 
-    this._passThroughHandshakeSCMiddleware({
-      socket: scSocket
-    }, (err, statusCode) => {
-      if (err) {
-        if (err.statusCode == null) {
-          err.statusCode = statusCode;
-        }
-        respond(err);
-        scSocket.disconnect(err.statusCode);
-        return;
-      }
-      this._processAuthToken(scSocket, signedAuthToken, (err, isBadToken, oldState) => {
-        if (scSocket.state === scSocket.CLOSED) {
+  async function handleSocketHandshake() {
+    for await (let rpc of scSocket.procedure('#handshake')) {
+      let data = rpc.data || {};
+      var signedAuthToken = data.authToken || null;
+      clearTimeout(scSocket._handshakeTimeoutRef);
+
+      this._passThroughHandshakeSCMiddleware({
+        socket: scSocket
+      }, (err, statusCode) => {
+        if (err) {
+          if (err.statusCode == null) {
+            err.statusCode = statusCode;
+          }
+          rpc.error(err);
+          scSocket.disconnect(err.statusCode);
           return;
         }
+        this._processAuthToken(scSocket, signedAuthToken, (err, isBadToken, oldState) => {
+          if (scSocket.state === scSocket.CLOSED) {
+            return;
+          }
 
-        var clientSocketStatus = {
-          id: scSocket.id,
-          pingTimeout: this.pingTimeout
-        };
-        var serverSocketStatus = {
-          id: scSocket.id,
-          pingTimeout: this.pingTimeout
-        };
+          var clientSocketStatus = {
+            id: scSocket.id,
+            pingTimeout: this.pingTimeout
+          };
+          var serverSocketStatus = {
+            id: scSocket.id,
+            pingTimeout: this.pingTimeout
+          };
 
-        if (err) {
-          if (signedAuthToken != null) {
-            // Because the token is optional as part of the handshake, we don't count
-            // it as an error if the token wasn't provided.
-            clientSocketStatus.authError = scErrors.dehydrateError(err);
-            serverSocketStatus.authError = err;
+          if (err) {
+            if (signedAuthToken != null) {
+              // Because the token is optional as part of the handshake, we don't count
+              // it as an error if the token wasn't provided.
+              clientSocketStatus.authError = scErrors.dehydrateError(err);
+              serverSocketStatus.authError = err;
 
-            if (isBadToken) {
-              scSocket.deauthenticate();
+              if (isBadToken) {
+                scSocket.deauthenticate();
+              }
             }
           }
-        }
-        clientSocketStatus.isAuthenticated = !!scSocket.authToken;
-        serverSocketStatus.isAuthenticated = clientSocketStatus.isAuthenticated;
+          clientSocketStatus.isAuthenticated = !!scSocket.authToken;
+          serverSocketStatus.isAuthenticated = clientSocketStatus.isAuthenticated;
 
-        if (this.pendingClients[id]) {
-          delete this.pendingClients[id];
-          this.pendingClientsCount--;
-        }
-        this.clients[id] = scSocket;
-        this.clientsCount++;
+          if (this.pendingClients[id]) {
+            delete this.pendingClients[id];
+            this.pendingClientsCount--;
+          }
+          this.clients[id] = scSocket;
+          this.clientsCount++;
 
-        scSocket.state = scSocket.OPEN;
+          scSocket.state = scSocket.OPEN;
 
-        scSocket.emit('connect', serverSocketStatus);
-        scSocket.emit('_connect', serverSocketStatus);
+          scSocket.emit('connect', serverSocketStatus);
+          scSocket.emit('_connect', serverSocketStatus);
 
-        this.emit('_connection', scSocket);
-        this.emit('connection', scSocket);
+          this.emit('_connection', scSocket);
+          this.emit('connection', scSocket);
 
-        if (clientSocketStatus.isAuthenticated) {
-          scSocket.triggerAuthenticationEvents(oldState);
-        }
-        // Treat authentication failure as a 'soft' error
-        respond(null, clientSocketStatus);
+          if (clientSocketStatus.isAuthenticated) {
+            scSocket.triggerAuthenticationEvents(oldState);
+          }
+          // Treat authentication failure as a 'soft' error
+          rpc.end(clientSocketStatus);
+        });
       });
-    });
-  });
+    }
+  }
+  handleSocketHandshake();
 
   // Emit event to signal that a socket handshake has been initiated.
   // The _handshake event is for internal use (including third-party plugins)
