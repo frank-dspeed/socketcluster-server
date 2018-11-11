@@ -448,7 +448,7 @@ SCServer.prototype._handleSocketConnection = function (wsSocket, upgradeReq) {
   this.pendingClients[id] = scSocket;
   this.pendingClientsCount++;
 
-  async function handleSocketAuthenticate() {
+  let handleSocketAuthenticate = async () => {
     for await (let rpc of scSocket.procedure('#authenticate')) {
       let signedAuthToken = rpc.data;
       this._processAuthToken(scSocket, signedAuthToken, (err, isBadToken, oldState) => {
@@ -470,17 +470,17 @@ SCServer.prototype._handleSocketConnection = function (wsSocket, upgradeReq) {
         }
       });
     }
-  }
+  };
   handleSocketAuthenticate();
 
-  async function handleSocketRemoveAuthToken() {
+  let handleSocketRemoveAuthToken = async () => {
     for await (let data of scSocket.receiver('#removeAuthToken')) {
       scSocket.deauthenticateSelf();
     }
-  }
+  };
   handleSocketRemoveAuthToken();
 
-  async function handleSocketSubscribe() {
+  let handleSocketSubscribe = async () => {
     for await (let rpc of scSocket.procedure('#subscribe')) {
       let channelOptions = rpc.data;
       if (!channelOptions) {
@@ -512,10 +512,10 @@ SCServer.prototype._handleSocketConnection = function (wsSocket, upgradeReq) {
         this.emit('warning', error);
       }
     }
-  }
+  };
   handleSocketSubscribe();
 
-  async function handleSocketUnsubscribe() {
+  let handleSocketUnsubscribe = async () => {
     for await (let rpc of scSocket.procedure('#unsubscribe')) {
       let channel = rpc.data;
       let error;
@@ -531,7 +531,7 @@ SCServer.prototype._handleSocketConnection = function (wsSocket, upgradeReq) {
         rpc.end();
       }
     }
-  }
+  };
   handleSocketUnsubscribe();
 
   var cleanupSocket = (type, code, data) => {
@@ -598,21 +598,21 @@ SCServer.prototype._handleSocketConnection = function (wsSocket, upgradeReq) {
     });
   };
 
-  async function handleSocketDisconnect() {
+  let handleSocketDisconnect = async () => {
     let event = await scSocket.listener('_disconnect').once();
     cleanupSocket('disconnect', event.code, event.data);
-  }
+  };
   handleSocketDisconnect();
 
-  async function handleSocketAbort() {
+  let handleSocketAbort = async () => {
     let event = await scSocket.listener('_connectAbort').once();
     cleanupSocket('abort', event.code, event.data);
-  }
-  handleSocketDisconnect();
+  };
+  handleSocketAbort();
 
   scSocket._handshakeTimeoutRef = setTimeout(this._handleHandshakeTimeout.bind(this, scSocket), this.handshakeTimeout);
 
-  async function handleSocketHandshake() {
+  let handleSocketHandshake = async () => {
     for await (let rpc of scSocket.procedure('#handshake')) {
       let data = rpc.data || {};
       var signedAuthToken = data.authToken || null;
@@ -681,7 +681,7 @@ SCServer.prototype._handleSocketConnection = function (wsSocket, upgradeReq) {
         });
       });
     }
-  }
+  };
   handleSocketHandshake();
 
   // Emit event to signal that a socket handshake has been initiated.
@@ -784,6 +784,7 @@ SCServer.prototype._isPrivateTransmittedEvent = function (event) {
 };
 
 SCServer.prototype.verifyInboundTransmittedEvent = function (requestOptions, cb) {
+  var socket = requestOptions.socket;
   var token = socket.getAuthToken();
   if (this.isAuthTokenExpired(token)) {
     requestOptions.authTokenExpiredError = new AuthTokenExpiredError('The socket auth token has expired', token.exp);
