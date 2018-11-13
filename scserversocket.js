@@ -134,6 +134,10 @@ SCServerSocket.prototype.procedure = function (procedureName) {
   return currentProcedure;
 };
 
+SCServerSocket.prototype.destroyProcedure = function (procedureName) {
+  delete this.procedures[procedureName];
+};
+
 SCServerSocket.prototype.listener = function (eventName) {
   var currentListener = this.listeners[eventName];
   if (!currentListener) {

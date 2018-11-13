@@ -537,16 +537,16 @@ SCServer.prototype._handleSocketConnection = function (wsSocket, upgradeReq) {
   var cleanupSocket = (type, code, data) => {
     clearTimeout(scSocket._handshakeTimeoutRef);
 
-    scSocket.off('#handshake'); // TODO 2222222
-    scSocket.off('#authenticate');
-    scSocket.off('#removeAuthToken');
-    scSocket.off('#subscribe');
-    scSocket.off('#unsubscribe');
-    scSocket.off('authenticate');
-    scSocket.off('authStateChange');
-    scSocket.off('deauthenticate');
-    scSocket.off('_disconnect');
-    scSocket.off('_connectAbort');
+    scSocket.destroyProcedure('#handshake');
+    scSocket.destroyProcedure('#authenticate');
+    scSocket.destroyProcedure('#subscribe');
+    scSocket.destroyProcedure('#unsubscribe');
+    scSocket.destroyReceiver('#removeAuthToken');
+    scSocket.destroyListener('authenticate');
+    scSocket.destroyListener('authStateChange');
+    scSocket.destroyListener('deauthenticate');
+    scSocket.destroyListener('_disconnect');
+    scSocket.destroyListener('_connectAbort');
 
     var isClientFullyConnected = !!this.clients[id];
 
@@ -690,7 +690,6 @@ SCServer.prototype._handleSocketConnection = function (wsSocket, upgradeReq) {
   this.emit('handshake', scSocket);
 };
 
-// TODO 2: Check if wsServer.close can send back error or not
 SCServer.prototype.close = function () {
   this.isReady = false;
   return new Promise((resolve, reject) => {
