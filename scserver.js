@@ -1,5 +1,4 @@
 var SCServerSocket = require('./scserversocket');
-var IterableAsyncStream = require('iterable-async-stream');
 var AuthEngine = require('sc-auth').AuthEngine;
 var formatter = require('sc-formatter');
 var base64id = require('base64id');
@@ -8,6 +7,7 @@ var url = require('url');
 var crypto = require('crypto');
 var uuid = require('uuid');
 var SCSimpleBroker = require('sc-simple-broker').SCSimpleBroker;
+var StreamDemux = require('stream-demux');
 
 var scErrors = require('sc-errors');
 var AuthTokenExpiredError = scErrors.AuthTokenExpiredError;
@@ -45,7 +45,7 @@ var SCServer = function (options) {
   };
 
   this.options = Object.assign(opts, options);
-  this.listeners = {}; // TODO 2
+  this._listenerDemux = new StreamDemux();
 
   this.MIDDLEWARE_HANDSHAKE_WS = 'handshakeWS';
   this.MIDDLEWARE_HANDSHAKE_SC = 'handshakeSC';
@@ -90,7 +90,7 @@ var SCServer = function (options) {
   this._path = opts.path.replace(/\/?$/, '/').replace(/^\/?/, '/');
   this.isReady = false;
 
-  // TODO 2: Implement IterableAsyncStream in sc-broker and sc-broker-cluster.
+  // TODO 2: Implement StreamDemux in sc-broker and sc-broker-cluster.
   this.brokerEngine.once('ready', () => {
     this.isReady = true;
     this.emit('ready');
@@ -188,23 +188,15 @@ var SCServer = function (options) {
 };
 
 SCServer.prototype.listener = function (eventName) {
-  var currentListener = this.listeners[eventName];
-  if (!currentListener) {
-    currentListener = new IterableAsyncStream();
-    this.listeners[eventName] = currentListener;
-  }
-  return currentListener;
+  return this._listenerDemux.stream(eventName);
 };
 
-SCServer.prototype.destroyListener = function (eventName) {
-  delete this.listeners[eventName];
+SCServer.prototype.endListener = function (eventName) {
+  this._listenerDemux.end(eventName);
 };
 
 SCServer.prototype.emit = function (event, data) {
-  var listener = this.listeners[event];
-  if (listener) {
-    listener.write(data);
-  }
+  this._listenerDemux.write(event, data);
 };
 
 SCServer.prototype.setAuthEngine = function (authEngine) {
@@ -537,16 +529,16 @@ SCServer.prototype._handleSocketConnection = function (wsSocket, upgradeReq) {
   var cleanupSocket = (type, code, data) => {
     clearTimeout(scSocket._handshakeTimeoutRef);
 
-    scSocket.destroyProcedure('#handshake');
-    scSocket.destroyProcedure('#authenticate');
-    scSocket.destroyProcedure('#subscribe');
-    scSocket.destroyProcedure('#unsubscribe');
-    scSocket.destroyReceiver('#removeAuthToken');
-    scSocket.destroyListener('authenticate');
-    scSocket.destroyListener('authStateChange');
-    scSocket.destroyListener('deauthenticate');
-    scSocket.destroyListener('_disconnect');
-    scSocket.destroyListener('_connectAbort');
+    scSocket.endProcedure('#handshake');
+    scSocket.endProcedure('#authenticate');
+    scSocket.endProcedure('#subscribe');
+    scSocket.endProcedure('#unsubscribe');
+    scSocket.endReceiver('#removeAuthToken');
+    scSocket.endListener('authenticate');
+    scSocket.endListener('authStateChange');
+    scSocket.endListener('deauthenticate');
+    scSocket.endListener('_disconnect');
+    scSocket.endListener('_connectAbort');
 
     var isClientFullyConnected = !!this.clients[id];
 

@@ -1,5 +1,5 @@
 var cloneDeep = require('lodash.clonedeep');
-var IterableAsyncStream = require('iterable-async-stream');
+var StreamDemux = require('stream-demux');
 var Response = require('./response').Response;
 
 var scErrors = require('sc-errors');
@@ -21,9 +21,10 @@ var SCServerSocket = function (id, server, socket) {
   this.state = this.CONNECTING;
   this.authState = this.UNAUTHENTICATED;
   this.active = true;
-  this.listeners = {};
-  this.receivers = {};
-  this.procedures = {};
+
+  this._listenerDemux = new StreamDemux();
+  this._receiverDemux = new StreamDemux();
+  this._procedureDemux = new StreamDemux();
 
   this.request = this.socket.upgradeReq || {};
 
@@ -112,50 +113,32 @@ SCServerSocket.UNAUTHENTICATED = SCServerSocket.prototype.UNAUTHENTICATED = 'una
 SCServerSocket.ignoreStatuses = scErrors.socketProtocolIgnoreStatuses;
 SCServerSocket.errorStatuses = scErrors.socketProtocolErrorStatuses;
 
-SCServerSocket.prototype.receiver = function (eventName) {
-  var currentReceiver = this.receivers[eventName];
-  if (!currentReceiver) {
-    currentReceiver = new IterableAsyncStream();
-    this.receivers[eventName] = currentReceiver;
-  }
-  return currentReceiver;
+SCServerSocket.prototype.receiver = function (receiverName) {
+  return this._receiverDemux.stream(receiverName);
 };
 
-SCServerSocket.prototype.destroyReceiver = function (eventName) {
-  delete this.receivers[eventName];
+SCServerSocket.prototype.endReceiver = function (receiverName) {
+  this._receiverDemux.end(receiverName);
 };
 
 SCServerSocket.prototype.procedure = function (procedureName) {
-  var currentProcedure = this.procedures[procedureName];
-  if (!currentProcedure) {
-    currentProcedure = new IterableAsyncStream();
-    this.procedures[procedureName] = currentProcedure;
-  }
-  return currentProcedure;
+  return this._procedureDemux.stream(procedureName);
 };
 
-SCServerSocket.prototype.destroyProcedure = function (procedureName) {
-  delete this.procedures[procedureName];
+SCServerSocket.prototype.endProcedure = function (procedureName) {
+  this._procedureDemux.end(procedureName);
 };
 
 SCServerSocket.prototype.listener = function (eventName) {
-  var currentListener = this.listeners[eventName];
-  if (!currentListener) {
-    currentListener = new IterableAsyncStream();
-    this.listeners[eventName] = currentListener;
-  }
-  return currentListener;
+  return this._listenerDemux.stream(eventName);
 };
 
-SCServerSocket.prototype.destroyListener = function (eventName) {
-  delete this.listeners[eventName];
+SCServerSocket.prototype.endListener = function (eventName) {
+  this._listenerDemux.end(eventName);
 };
 
 SCServerSocket.prototype.emit = function (event, data) {
-  var listener = this.listeners[event];
-  if (listener) {
-    listener.write(data);
-  }
+  this._listenerDemux.write(event, data);
 };
 
 SCServerSocket.prototype._sendPing = function () {
@@ -177,10 +160,7 @@ SCServerSocket.prototype._handleTransmittedEventObject = function (obj, message)
     if (obj.cid == null) {
       this.server.verifyInboundTransmittedEvent(requestOptions, (err, newEventData) => {
         if (!err) {
-          var receiver = this.receivers[eventName];
-          if (receiver) {
-            receiver.write(newEventData);
-          }
+          this._receiverDemux.write(eventName, newEventData);
         }
       });
     } else {
@@ -197,18 +177,15 @@ SCServerSocket.prototype._handleTransmittedEventObject = function (obj, message)
               response.end();
             }
           } else {
-            var procedure = this.procedures[eventName];
-            if (procedure) {
-              procedure.write({
-                data: newEventData,
-                end: (data) => {
-                  response.end(data);
-                },
-                error: (err) => {
-                  response.error(err);
-                }
-              });
-            }
+            this._procedureDemux.write(eventName, {
+              data: newEventData,
+              end: (data) => {
+                response.end(data);
+              },
+              error: (err) => {
+                response.error(err);
+              }
+            });
           }
         }
       });
