@@ -137,8 +137,8 @@ SCServerSocket.prototype.endListener = function (eventName) {
   this._listenerDemux.end(eventName);
 };
 
-SCServerSocket.prototype.emit = function (event, data) {
-  this._listenerDemux.write(event, data);
+SCServerSocket.prototype.emit = function (eventName, data) {
+  this._listenerDemux.write(eventName, data);
 };
 
 SCServerSocket.prototype._sendPing = function () {
@@ -197,7 +197,9 @@ SCServerSocket.prototype._handleTransmittedEventObject = function (obj, message)
       clearTimeout(ret.timeout);
       delete this._callbackMap[obj.rid];
       var rehydratedError = scErrors.hydrateError(obj.error);
-      ret.callback(rehydratedError, obj.data);
+      setTimeout(() => {
+        ret.callback(rehydratedError, obj.data);
+      }, 0);
     }
   } else {
     // The last remaining case is to treat the message as raw

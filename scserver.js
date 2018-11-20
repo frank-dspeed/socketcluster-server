@@ -195,8 +195,8 @@ SCServer.prototype.endListener = function (eventName) {
   this._listenerDemux.end(eventName);
 };
 
-SCServer.prototype.emit = function (event, data) {
-  this._listenerDemux.write(event, data);
+SCServer.prototype.emit = function (eventName, data) {
+  this._listenerDemux.write(eventName, data);
 };
 
 SCServer.prototype.setAuthEngine = function (authEngine) {
@@ -409,7 +409,7 @@ SCServer.prototype._processAuthToken = function (scSocket, signedAuthToken, call
   if (verifyTokenResult instanceof Promise) {
     verifyTokenResult
     .then((token) => {
-      return {token: token};
+      return {token};
     })
     .catch((err) => {
       return {error: err};
