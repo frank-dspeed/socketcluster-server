@@ -443,6 +443,7 @@ SCServer.prototype._handleSocketConnection = function (wsSocket, upgradeReq) {
   let handleSocketAuthenticate = async () => {
     for await (let rpc of scSocket.procedure('#authenticate')) {
       let signedAuthToken = rpc.data;
+
       this._processAuthToken(scSocket, signedAuthToken, (err, isBadToken, oldState) => {
         if (err) {
           if (isBadToken) {
@@ -475,6 +476,7 @@ SCServer.prototype._handleSocketConnection = function (wsSocket, upgradeReq) {
   let handleSocketSubscribe = async () => {
     for await (let rpc of scSocket.procedure('#subscribe')) {
       let channelOptions = rpc.data;
+
       if (!channelOptions) {
         channelOptions = {};
       } else if (typeof channelOptions === 'string') {
@@ -482,8 +484,7 @@ SCServer.prototype._handleSocketConnection = function (wsSocket, upgradeReq) {
           channel: channelOptions
         };
       }
-      // This is an invalid state; it means the client tried to subscribe before
-      // having completed the handshake.
+
       if (scSocket.state === scSocket.OPEN) {
         this._subscribeSocket(scSocket, channelOptions, (err) => {
           if (err) {
@@ -499,6 +500,8 @@ SCServer.prototype._handleSocketConnection = function (wsSocket, upgradeReq) {
           }
         });
       } else {
+        // This is an invalid state; it means the client tried to subscribe before
+        // having completed the handshake.
         var error = new InvalidActionError('Cannot subscribe socket to a channel before it has completed the handshake');
         rpc.error(error);
         this.emit('warning', error);
