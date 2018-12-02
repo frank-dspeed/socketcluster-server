@@ -57,9 +57,7 @@ var SCServerSocket = function (id, server, socket) {
   });
 
   this.socket.on('close', (code, data) => {
-    setTimeout(() => {
-      this._onSCClose(code, data);
-    }, 0);
+    this._onSCClose(code, data);
   });
 
   if (!this.server.pingTimeoutDisabled) {
@@ -197,9 +195,7 @@ SCServerSocket.prototype._handleTransmittedEventObject = function (obj, message)
       clearTimeout(ret.timeout);
       delete this._callbackMap[obj.rid];
       var rehydratedError = scErrors.hydrateError(obj.error);
-      setTimeout(() => {
-        ret.callback(rehydratedError, obj.data);
-      }, 0);
+      ret.callback(rehydratedError, obj.data);
     }
   } else {
     // The last remaining case is to treat the message as raw
