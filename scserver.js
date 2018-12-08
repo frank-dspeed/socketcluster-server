@@ -191,8 +191,8 @@ SCServer.prototype.listener = function (eventName) {
   return this._listenerDemux.stream(eventName);
 };
 
-SCServer.prototype.endListener = function (eventName) {
-  this._listenerDemux.end(eventName);
+SCServer.prototype.closeListener = function (eventName) {
+  this._listenerDemux.close(eventName);
 };
 
 SCServer.prototype.emit = function (eventName, data) {
@@ -532,16 +532,16 @@ SCServer.prototype._handleSocketConnection = function (wsSocket, upgradeReq) {
   var cleanupSocket = (type, code, data) => {
     clearTimeout(scSocket._handshakeTimeoutRef);
 
-    scSocket.endProcedure('#handshake');
-    scSocket.endProcedure('#authenticate');
-    scSocket.endProcedure('#subscribe');
-    scSocket.endProcedure('#unsubscribe');
-    scSocket.endReceiver('#removeAuthToken');
-    scSocket.endListener('authenticate');
-    scSocket.endListener('authStateChange');
-    scSocket.endListener('deauthenticate');
-    scSocket.endListener('_disconnect');
-    scSocket.endListener('_connectAbort');
+    scSocket.closeProcedure('#handshake');
+    scSocket.closeProcedure('#authenticate');
+    scSocket.closeProcedure('#subscribe');
+    scSocket.closeProcedure('#unsubscribe');
+    scSocket.closeReceiver('#removeAuthToken');
+    scSocket.closeListener('authenticate');
+    scSocket.closeListener('authStateChange');
+    scSocket.closeListener('deauthenticate');
+    scSocket.closeListener('_disconnect');
+    scSocket.closeListener('_connectAbort');
 
     var isClientFullyConnected = !!this.clients[id];
 

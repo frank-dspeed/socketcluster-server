@@ -115,24 +115,24 @@ SCServerSocket.prototype.receiver = function (receiverName) {
   return this._receiverDemux.stream(receiverName);
 };
 
-SCServerSocket.prototype.endReceiver = function (receiverName) {
-  this._receiverDemux.end(receiverName);
+SCServerSocket.prototype.closeReceiver = function (receiverName) {
+  this._receiverDemux.close(receiverName);
 };
 
 SCServerSocket.prototype.procedure = function (procedureName) {
   return this._procedureDemux.stream(procedureName);
 };
 
-SCServerSocket.prototype.endProcedure = function (procedureName) {
-  this._procedureDemux.end(procedureName);
+SCServerSocket.prototype.closeProcedure = function (procedureName) {
+  this._procedureDemux.close(procedureName);
 };
 
 SCServerSocket.prototype.listener = function (eventName) {
   return this._listenerDemux.stream(eventName);
 };
 
-SCServerSocket.prototype.endListener = function (eventName) {
-  this._listenerDemux.end(eventName);
+SCServerSocket.prototype.closeListener = function (eventName) {
+  this._listenerDemux.close(eventName);
 };
 
 SCServerSocket.prototype.emit = function (eventName, data) {
