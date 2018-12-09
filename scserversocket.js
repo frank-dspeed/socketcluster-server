@@ -236,15 +236,12 @@ SCServerSocket.prototype._onSCClose = function (code, data) {
 
     if (prevState === this.CONNECTING) {
       // Private connectAbort event for internal use only
-      this.emit('_connectAbort', {code, data});
       this.emit('connectAbort', {code, data});
     } else {
       // Private disconnect event for internal use only
-      this.emit('_disconnect', {code, data});
       this.emit('disconnect', {code, data});
     }
     // Private close event for internal use only
-    this.emit('_close', {code, data});
     this.emit('close', {code, data});
 
     if (!SCServerSocket.ignoreStatuses[code]) {

@@ -540,8 +540,6 @@ SCServer.prototype._handleSocketConnection = function (wsSocket, upgradeReq) {
     scSocket.closeListener('authenticate');
     scSocket.closeListener('authStateChange');
     scSocket.closeListener('deauthenticate');
-    scSocket.closeListener('_disconnect');
-    scSocket.closeListener('_connectAbort');
 
     var isClientFullyConnected = !!this.clients[id];
 
@@ -559,33 +557,18 @@ SCServer.prototype._handleSocketConnection = function (wsSocket, upgradeReq) {
     this._unsubscribeSocketFromAllChannels(scSocket);
 
     if (type === 'disconnect') {
-      this.emit('_disconnection', {
-        socket: scSocket,
-        code,
-        data
-      });
       this.emit('disconnection', {
         socket: scSocket,
         code,
         data
       });
     } else if (type === 'abort') {
-      this.emit('_connectionAbort', {
-        socket: scSocket,
-        code,
-        data
-      });
       this.emit('connectionAbort', {
         socket: scSocket,
         code,
         data
       });
     }
-    this.emit('_closure', {
-      socket: scSocket,
-      code,
-      data
-    });
     this.emit('closure', {
       socket: scSocket,
       code,
@@ -594,13 +577,13 @@ SCServer.prototype._handleSocketConnection = function (wsSocket, upgradeReq) {
   };
 
   let handleSocketDisconnect = async () => {
-    let event = await scSocket.listener('_disconnect').once();
+    let event = await scSocket.listener('disconnect').once();
     cleanupSocket('disconnect', event.code, event.data);
   };
   handleSocketDisconnect();
 
   let handleSocketAbort = async () => {
-    let event = await scSocket.listener('_connectAbort').once();
+    let event = await scSocket.listener('connectAbort').once();
     cleanupSocket('abort', event.code, event.data);
   };
   handleSocketAbort();
@@ -663,9 +646,6 @@ SCServer.prototype._handleSocketConnection = function (wsSocket, upgradeReq) {
           scSocket.state = scSocket.OPEN;
 
           scSocket.emit('connect', serverSocketStatus);
-          scSocket.emit('_connect', serverSocketStatus);
-
-          this.emit('_connection', scSocket);
           this.emit('connection', scSocket);
 
           if (clientSocketStatus.isAuthenticated) {
@@ -680,8 +660,6 @@ SCServer.prototype._handleSocketConnection = function (wsSocket, upgradeReq) {
   handleSocketHandshake();
 
   // Emit event to signal that a socket handshake has been initiated.
-  // The _handshake event is for internal use (including third-party plugins)
-  this.emit('_handshake', scSocket);
   this.emit('handshake', scSocket);
 };
 
