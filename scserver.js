@@ -425,6 +425,7 @@ SCServer.prototype._processAuthToken = function (scSocket, signedAuthToken, call
 };
 
 SCServer.prototype._handleSocketConnection = function (wsSocket, upgradeReq) {
+  // TODO 2: Do not check the wsEngine; instead, check if upgradeReq property already exists or not
   if (this.options.wsEngine === 'ws') {
     // Normalize ws module to match sc-uws module.
     wsSocket.upgradeReq = upgradeReq;
@@ -755,7 +756,7 @@ SCServer.prototype._isPrivateTransmittedEvent = function (event) {
   return typeof event === 'string' && event.indexOf('#') === 0;
 };
 
-SCServer.prototype.verifyInboundTransmittedEvent = function (requestOptions, cb) {
+SCServer.prototype.verifyInboundTransmittedEvent = function (requestOptions, callback) {
   var socket = requestOptions.socket;
   var token = socket.getAuthToken();
   if (this.isAuthTokenExpired(token)) {
@@ -764,7 +765,7 @@ SCServer.prototype.verifyInboundTransmittedEvent = function (requestOptions, cb)
     socket.deauthenticate();
   }
 
-  this._passThroughMiddleware(requestOptions, cb);
+  this._passThroughMiddleware(requestOptions, callback);
 };
 
 SCServer.prototype.isAuthTokenExpired = function (token) {

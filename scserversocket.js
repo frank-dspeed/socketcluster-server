@@ -28,6 +28,7 @@ var SCServerSocket = function (id, server, socket) {
 
   this.request = this.socket.upgradeReq || {};
 
+  // TODO 2: Do not check the wsEngine directly, instead, check if the this.request.connection object already exists or not.
   var wsEngine = this.server.options.wsEngine;
   if (wsEngine === 'sc-uws' || wsEngine === 'uws') {
     this.request.connection = this.socket._socket;
