@@ -39,94 +39,108 @@ var resolveAfterTimeout = function (duration, value) {
 };
 
 var connectionHandler = function (socket) {
-  socket.on('login', function (userDetails, respond) {
-    if (allowedUsers[userDetails.username]) {
-      socket.setAuthToken(userDetails);
-      respond();
-    } else {
-      var err = new Error('Failed to login');
-      err.name = 'FailedLoginError';
-      respond(err);
+  (async () => {
+    for await (let rpc of socket.procedure('login')) {
+      if (allowedUsers[rpc.data.username]) {
+        socket.setAuthToken(rpc.data);
+        rpc.end();
+      } else {
+        var err = new Error('Failed to login');
+        err.name = 'FailedLoginError';
+        rpc.error(err);
+      }
     }
-  });
-  socket.on('loginWithTenDayExpiry', function (userDetails, respond) {
-    if (allowedUsers[userDetails.username]) {
-      socket.setAuthToken(userDetails, {
-        expiresIn: TEN_DAYS_IN_SECONDS
-      });
-      respond();
-    } else {
-      var err = new Error('Failed to login');
-      err.name = 'FailedLoginError';
-      respond(err);
+  })();
+
+  (async () => {
+    for await (let rpc of socket.procedure('loginWithTenDayExpiry')) {
+      if (allowedUsers[rpc.data.username]) {
+        socket.setAuthToken(rpc.data, {
+          expiresIn: TEN_DAYS_IN_SECONDS
+        });
+        rpc.end();
+      } else {
+        var err = new Error('Failed to login');
+        err.name = 'FailedLoginError';
+        rpc.error(err);
+      }
     }
-  });
-  socket.on('loginWithTenDayExp', function (userDetails, respond) {
-    if (allowedUsers[userDetails.username]) {
-      userDetails.exp = Math.round(Date.now() / 1000) + TEN_DAYS_IN_SECONDS;
-      socket.setAuthToken(userDetails);
-      respond();
-    } else {
-      var err = new Error('Failed to login');
-      err.name = 'FailedLoginError';
-      respond(err);
+  })();
+
+  (async () => {
+    for await (let rpc of socket.procedure('loginWithTenDayExp')) {
+      if (allowedUsers[rpc.data.username]) {
+        rpc.data.exp = Math.round(Date.now() / 1000) + TEN_DAYS_IN_SECONDS;
+        socket.setAuthToken(rpc.data);
+        rpc.end();
+      } else {
+        var err = new Error('Failed to login');
+        err.name = 'FailedLoginError';
+        rpc.error(err);
+      }
     }
-  });
-  socket.on('loginWithTenDayExpAndExpiry', function (userDetails, respond) {
-    if (allowedUsers[userDetails.username]) {
-      userDetails.exp = Math.round(Date.now() / 1000) + TEN_DAYS_IN_SECONDS;
-      socket.setAuthToken(userDetails, {
-        expiresIn: TEN_DAYS_IN_SECONDS * 100 // 1000 days
-      });
-      respond();
-    } else {
-      var err = new Error('Failed to login');
-      err.name = 'FailedLoginError';
-      respond(err);
+  })();
+
+  (async () => {
+    for await (let rpc of socket.procedure('loginWithTenDayExpAndExpiry')) {
+      if (allowedUsers[rpc.data.username]) {
+        rpc.data.exp = Math.round(Date.now() / 1000) + TEN_DAYS_IN_SECONDS;
+        socket.setAuthToken(rpc.data, {
+          expiresIn: TEN_DAYS_IN_SECONDS * 100 // 1000 days
+        });
+        rpc.end();
+      } else {
+        var err = new Error('Failed to login');
+        err.name = 'FailedLoginError';
+        rpc.error(err);
+      }
     }
-  });
-  socket.on('loginWithIssAndIssuer', function (userDetails, respond) {
-    if (allowedUsers[userDetails.username]) {
-      userDetails.iss = 'foo';
-      socket.setAuthToken(userDetails, {
-        issuer: 'bar'
-      }).catch((err) => {});
-      respond();
-    } else {
-      var err = new Error('Failed to login');
-      err.name = 'FailedLoginError';
-      respond(err);
+  })();
+
+  (async () => {
+    for await (let rpc of socket.procedure('loginWithIssAndIssuer')) {
+      if (allowedUsers[rpc.data.username]) {
+        rpc.data.iss = 'foo';
+        try {
+          await socket.setAuthToken(rpc.data, {
+            issuer: 'bar'
+          });
+        } catch (err) {}
+        rpc.end();
+      } else {
+        var err = new Error('Failed to login');
+        err.name = 'FailedLoginError';
+        rpc.error(err);
+      }
     }
-  });
-  socket.on('setAuthKey', function (newAuthKey, respond) {
-    server.signatureKey = newAuthKey;
-    server.verificationKey = newAuthKey;
-    respond();
-  });
+  })();
+
+  (async () => {
+    for await (let rpc of socket.procedure('setAuthKey')) {
+      server.signatureKey = rpc.data;
+      server.verificationKey = rpc.data;
+      rpc.end();
+    }
+  })();
 };
 
-var destroyTestCase = function (next) {
+function destroyTestCase() {
   if (client) {
-    client.on('error', function (err) {});
+    (async () => {
+      for await (let err of client.listener('error')) {}
+    })();
 
     if (client.state !== client.CLOSED) {
-      client.once('close', function () {
-        client.removeAllListeners('close');
-        client.removeAllListeners('connectAbort');
-        client.removeAllListeners('disconnect');
-        next();
-      });
       client.disconnect();
-    } else {
-      next();
+      client.closeListener('close');
+      client.closeListener('connectAbort');
+      client.closeListener('disconnect');
     }
-  } else {
-    next();
   }
 };
 
 describe('Integration tests', function () {
-  beforeEach('Run the server before start', function (done) {
+  beforeEach('Run the server before start', async function () {
     clientOptions = {
       hostname: '127.0.0.1',
       multiplex: false,
@@ -138,8 +152,14 @@ describe('Integration tests', function () {
     };
 
     server = socketClusterServer.listen(portNumber, serverOptions);
-    server.on('connection', connectionHandler);
 
+    (async () => {
+      for await (let socket of server.listener('connection')) {
+        connectionHandler(socket);
+      }
+    })();
+
+    // TODO 2: Use to async middleware
     server.addMiddleware(server.MIDDLEWARE_AUTHENTICATE, function (req, next) {
       if (req.authToken.username === 'alice') {
         var err = new Error('Blocked by MIDDLEWARE_AUTHENTICATE');
@@ -150,55 +170,40 @@ describe('Integration tests', function () {
       }
     });
 
-    server.on('ready', function () {
-      done();
-    });
+    await server.listener('ready').once();
   });
 
-  afterEach('Shut down client after each test', function (done) {
+  afterEach('Shut down client after each test', async function () {
     server.close();
     portNumber++;
-    destroyTestCase(function () {
-      global.localStorage.removeItem('socketCluster.authToken');
-      done();
-    });
+    destroyTestCase();
+    global.localStorage.removeItem('socketCluster.authToken');
   });
 
   describe('Socket authentication', function () {
-    it('Should not send back error if JWT is not provided in handshake', function (done) {
-      client = socketCluster.connect(clientOptions);
-      client.once('connect', function (status) {
-        assert.equal(status.authError === undefined, true);
-        done();
-      });
+    it('Should not send back error if JWT is not provided in handshake', async function () {
+      client = socketCluster.create(clientOptions);
+      let packet = await client.listener('connect').once();
+      assert.equal(packet.status.authError === undefined, true);
     });
 
-    it('Should be authenticated on connect if previous JWT token is present', function (done) {
-      client = socketCluster.connect(clientOptions);
-      client.once('connect', function (statusA) {
-        client.transmit('login', {username: 'bob'});
-        client.once('authenticate', function (state) {
-          assert.equal(client.authState, 'authenticated');
-
-          client.once('disconnect', function () {
-            client.once('connect', function (statusB) {
-              assert.equal(statusB.isAuthenticated, true);
-              assert.equal(statusB.authError === undefined, true);
-              done();
-            });
-
-            client.connect();
-          });
-
-          client.disconnect();
-        });
-      });
+    it('Should be authenticated on connect if previous JWT token is present', async function () {
+      client = socketCluster.create(clientOptions);
+      await client.listener('connect').once();
+      client.invoke('login', {username: 'bob'});
+      await client.listener('authenticate').once();
+      assert.equal(client.authState, 'authenticated');
+      client.disconnect();
+      client.connect();
+      let packet = await client.listener('connect').once();
+      assert.equal(packet.status.isAuthenticated, true);
+      assert.equal(packet.status.authError === undefined, true);
     });
 
     it('Should send back error if JWT is invalid during handshake', function (done) {
       global.localStorage.setItem('socketCluster.authToken', validSignedAuthTokenBob);
 
-      client = socketCluster.connect(clientOptions);
+      client = socketCluster.create(clientOptions);
       client.once('connect', function (statusA) {
         // Change the setAuthKey to invalidate the current token.
         client.transmit('setAuthKey', 'differentAuthKey')
@@ -247,7 +252,7 @@ describe('Integration tests', function () {
       });
 
       var clientSocketId;
-      client = socketCluster.connect(clientOptions);
+      client = socketCluster.create(clientOptions);
       client.once('connect', function (statusA) {
         clientSocketId = client.id;
         client.transmit('login', {username: 'alice'});
@@ -290,7 +295,7 @@ describe('Integration tests', function () {
         });
       });
 
-      client = socketCluster.connect(clientOptions);
+      client = socketCluster.create(clientOptions);
       client.once('connect', function (statusA) {
         client.deauthenticate();
       });
@@ -332,7 +337,7 @@ describe('Integration tests', function () {
     it('Should not authenticate the client if MIDDLEWARE_AUTHENTICATE blocks the authentication', function (done) {
       global.localStorage.setItem('socketCluster.authToken', validSignedAuthTokenAlice);
 
-      client = socketCluster.connect(clientOptions);
+      client = socketCluster.create(clientOptions);
       // The previous test authenticated us as 'alice', so that token will be passed to the server as
       // part of the handshake.
       client.once('connect', function (statusB) {
@@ -354,7 +359,7 @@ describe('Integration tests', function () {
       });
       server.on('connection', connectionHandler);
       server.on('ready', function () {
-        client = socketCluster.connect({
+        client = socketCluster.create({
           hostname: clientOptions.hostname,
           port: portNumber,
           multiplex: false
@@ -380,7 +385,7 @@ describe('Integration tests', function () {
       });
       server.on('connection', connectionHandler);
       server.on('ready', function () {
-        client = socketCluster.connect({
+        client = socketCluster.create({
           hostname: clientOptions.hostname,
           port: portNumber,
           multiplex: false
@@ -406,7 +411,7 @@ describe('Integration tests', function () {
       });
       server.on('connection', connectionHandler);
       server.on('ready', function () {
-        client = socketCluster.connect({
+        client = socketCluster.create({
           hostname: clientOptions.hostname,
           port: portNumber,
           multiplex: false
@@ -438,7 +443,7 @@ describe('Integration tests', function () {
       });
       server.on('connection', connectionHandler);
       server.on('ready', function () {
-        client = socketCluster.connect({
+        client = socketCluster.create({
           hostname: clientOptions.hostname,
           port: portNumber,
           multiplex: false
@@ -467,7 +472,7 @@ describe('Integration tests', function () {
       });
       server.on('connection', connectionHandler);
       server.on('ready', function () {
-        client = socketCluster.connect({
+        client = socketCluster.create({
           hostname: clientOptions.hostname,
           port: portNumber,
           multiplex: false
@@ -496,7 +501,7 @@ describe('Integration tests', function () {
       });
       server.on('connection', connectionHandler);
       server.on('ready', function () {
-        client = socketCluster.connect({
+        client = socketCluster.create({
           hostname: clientOptions.hostname,
           port: portNumber,
           multiplex: false
@@ -527,7 +532,7 @@ describe('Integration tests', function () {
 
       server.on('connection', connectionHandler);
       server.on('ready', function () {
-        client = socketCluster.connect({
+        client = socketCluster.create({
           hostname: clientOptions.hostname,
           port: portNumber,
           multiplex: false
@@ -583,7 +588,7 @@ describe('Integration tests', function () {
       });
 
       server.on('ready', function () {
-        client = socketCluster.connect({
+        client = socketCluster.create({
           hostname: clientOptions.hostname,
           port: portNumber,
           multiplex: false
@@ -634,7 +639,7 @@ describe('Integration tests', function () {
       });
 
       server.on('ready', function () {
-        client = socketCluster.connect({
+        client = socketCluster.create({
           hostname: clientOptions.hostname,
           port: portNumber,
           multiplex: false
@@ -683,7 +688,7 @@ describe('Integration tests', function () {
       });
 
       server.on('ready', function () {
-        client = socketCluster.connect({
+        client = socketCluster.create({
           hostname: clientOptions.hostname,
           port: portNumber,
           multiplex: false
@@ -716,7 +721,7 @@ describe('Integration tests', function () {
       });
       server.on('connection', connectionHandler);
       server.on('ready', function () {
-        client = socketCluster.connect({
+        client = socketCluster.create({
           hostname: clientOptions.hostname,
           port: portNumber,
           multiplex: false
@@ -737,7 +742,7 @@ describe('Integration tests', function () {
       });
       server.on('connection', connectionHandler);
       server.on('ready', function () {
-        client = socketCluster.connect({
+        client = socketCluster.create({
           hostname: clientOptions.hostname,
           port: portNumber,
           multiplex: false
@@ -775,7 +780,7 @@ describe('Integration tests', function () {
       server.on('connection', connectionHandler);
 
       server.on('ready', function () {
-        client = socketCluster.connect({
+        client = socketCluster.create({
           hostname: clientOptions.hostname,
           port: portNumber,
           multiplex: false
@@ -812,7 +817,7 @@ describe('Integration tests', function () {
         status.foo = 123;
       });
       server.on('ready', function () {
-        client = socketCluster.connect({
+        client = socketCluster.create({
           hostname: clientOptions.hostname,
           port: portNumber,
           multiplex: false
@@ -890,7 +895,7 @@ describe('Integration tests', function () {
       });
       server.on('connection', connectionHandler);
       server.on('ready', function () {
-        client = socketCluster.connect({
+        client = socketCluster.create({
           hostname: clientOptions.hostname,
           port: portNumber,
           multiplex: false
@@ -962,7 +967,7 @@ describe('Integration tests', function () {
       });
       server.on('connection', connectionHandler);
       server.on('ready', function () {
-        client = socketCluster.connect({
+        client = socketCluster.create({
           hostname: clientOptions.hostname,
           port: portNumber,
           multiplex: false
@@ -1034,7 +1039,7 @@ describe('Integration tests', function () {
       });
       server.on('connection', connectionHandler);
       server.on('ready', function () {
-        client = socketCluster.connect({
+        client = socketCluster.create({
           hostname: clientOptions.hostname,
           port: portNumber,
           multiplex: false
@@ -1087,7 +1092,7 @@ describe('Integration tests', function () {
       });
       server.on('connection', connectionHandler);
       server.on('ready', function () {
-        client = socketCluster.connect({
+        client = socketCluster.create({
           hostname: clientOptions.hostname,
           port: portNumber,
           multiplex: false
@@ -1167,7 +1172,7 @@ describe('Integration tests', function () {
       });
 
       server.on('ready', function () {
-        client = socketCluster.connect({
+        client = socketCluster.create({
           hostname: clientOptions.hostname,
           port: portNumber,
           multiplex: false
@@ -1215,7 +1220,7 @@ describe('Integration tests', function () {
       });
       server.on('connection', connectionHandler);
       server.on('ready', function () {
-        client = socketCluster.connect({
+        client = socketCluster.create({
           hostname: clientOptions.hostname,
           port: portNumber,
           multiplex: false
@@ -1261,7 +1266,7 @@ describe('Integration tests', function () {
       server.on('connection', connectionHandler);
 
       server.on('ready', function () {
-        client = socketCluster.connect({
+        client = socketCluster.create({
           hostname: clientOptions.hostname,
           port: portNumber,
           multiplex: false
@@ -1390,7 +1395,7 @@ describe('Integration tests', function () {
       });
 
       server.on('ready', function () {
-        client = socketCluster.connect({
+        client = socketCluster.create({
           hostname: clientOptions.hostname,
           port: portNumber,
           multiplex: false
@@ -1443,7 +1448,7 @@ describe('Integration tests', function () {
       });
 
       server.on('ready', function () {
-        client = socketCluster.connect({
+        client = socketCluster.create({
           hostname: clientOptions.hostname,
           port: portNumber,
           multiplex: false
@@ -1475,7 +1480,7 @@ describe('Integration tests', function () {
       });
 
       server.on('ready', function () {
-        client = socketCluster.connect({
+        client = socketCluster.create({
           hostname: clientOptions.hostname,
           port: portNumber,
           multiplex: false
@@ -1514,7 +1519,7 @@ describe('Integration tests', function () {
       });
 
       server.on('ready', function () {
-        client = socketCluster.connect({
+        client = socketCluster.create({
           hostname: clientOptions.hostname,
           port: portNumber,
           multiplex: false
@@ -1571,7 +1576,7 @@ describe('Integration tests', function () {
       });
 
       server.on('ready', function () {
-        client = socketCluster.connect({
+        client = socketCluster.create({
           hostname: clientOptions.hostname,
           port: portNumber,
           multiplex: false
@@ -1617,7 +1622,7 @@ describe('Integration tests', function () {
       });
 
       server.on('ready', function () {
-        client = socketCluster.connect({
+        client = socketCluster.create({
           hostname: clientOptions.hostname,
           port: portNumber,
           multiplex: false
@@ -1651,7 +1656,7 @@ describe('Integration tests', function () {
         }, 100);
       });
       server.on('ready', function () {
-        client = socketCluster.connect({
+        client = socketCluster.create({
           hostname: clientOptions.hostname,
           port: portNumber,
           multiplex: false
@@ -1683,7 +1688,7 @@ describe('Integration tests', function () {
         }, 100);
       });
       server.on('ready', function () {
-        client = socketCluster.connect({
+        client = socketCluster.create({
           hostname: clientOptions.hostname,
           port: portNumber,
           multiplex: false
@@ -1713,15 +1718,13 @@ describe('Integration tests', function () {
         });
       });
 
-      afterEach('Shut down server afterwards', function (done) {
-        destroyTestCase(function () {
-          server.close();
-          done();
-        });
+      afterEach('Shut down server afterwards', async function () {
+        destroyTestCase();
+        server.close();
       });
 
       it('Should disconnect socket if server does not receive a pong from client before timeout', function (done) {
-        client = socketCluster.connect({
+        client = socketCluster.create({
           hostname: clientOptions.hostname,
           port: portNumber,
           multiplex: false
@@ -1777,15 +1780,13 @@ describe('Integration tests', function () {
         });
       });
 
-      afterEach('Shut down server afterwards', function (done) {
-        destroyTestCase(function () {
-          server.close();
-          done();
-        });
+      afterEach('Shut down server afterwards', async function () {
+        destroyTestCase();
+        server.close();
       });
 
       it('Should not disconnect socket if server does not receive a pong from client before timeout', function (done) {
-        client = socketCluster.connect({
+        client = socketCluster.create({
           hostname: clientOptions.hostname,
           port: portNumber,
           multiplex: false,
@@ -1839,11 +1840,9 @@ describe('Integration tests', function () {
       });
     });
 
-    afterEach('Shut down server afterwards', function (done) {
-      destroyTestCase(function () {
-        server.close();
-        done();
-      });
+    afterEach('Shut down server afterwards', async function () {
+      destroyTestCase();
+      server.close();
     });
 
     describe('MIDDLEWARE_AUTHENTICATE', function () {
@@ -1854,7 +1853,7 @@ describe('Integration tests', function () {
         };
         server.addMiddleware(server.MIDDLEWARE_AUTHENTICATE, middlewareFunction);
 
-        client = socketCluster.connect({
+        client = socketCluster.create({
           hostname: clientOptions.hostname,
           port: portNumber,
           multiplex: false
@@ -1875,7 +1874,7 @@ describe('Integration tests', function () {
         };
         server.addMiddleware(server.MIDDLEWARE_AUTHENTICATE, middlewareFunction);
 
-        client = socketCluster.connect({
+        client = socketCluster.create({
           hostname: clientOptions.hostname,
           port: portNumber,
           multiplex: false
@@ -1910,7 +1909,7 @@ describe('Integration tests', function () {
           serverWarnings.push(err);
         });
 
-        client = socketCluster.connect({
+        client = socketCluster.create({
           hostname: clientOptions.hostname,
           port: portNumber,
           multiplex: false
@@ -1952,7 +1951,7 @@ describe('Integration tests', function () {
         };
         server.addMiddleware(server.MIDDLEWARE_HANDSHAKE_SC, middlewareFunction);
 
-        client = socketCluster.connect({
+        client = socketCluster.create({
           hostname: clientOptions.hostname,
           port: portNumber,
           multiplex: false
@@ -1991,7 +1990,7 @@ describe('Integration tests', function () {
         };
         server.addMiddleware(server.MIDDLEWARE_HANDSHAKE_SC, middlewareFunction);
 
-        client = socketCluster.connect({
+        client = socketCluster.create({
           hostname: clientOptions.hostname,
           port: portNumber,
           multiplex: false
@@ -2025,7 +2024,7 @@ describe('Integration tests', function () {
         server.addMiddleware(server.MIDDLEWARE_HANDSHAKE_SC, middlewareFunction);
 
         createConnectionTime = Date.now();
-        client = socketCluster.connect({
+        client = socketCluster.create({
           hostname: clientOptions.hostname,
           port: portNumber,
           multiplex: false
