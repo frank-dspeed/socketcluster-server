@@ -26,19 +26,20 @@ var invalidSignedAuthToken = 'fakebGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.fakec2VybmFtZ
 
 var server, client;
 
-var resolveAfterTimeout = function (duration, value) {
-  return new Promise((resolve, reject) => {
+function wait(duration) {
+  return new Promise((resolve) => {
     setTimeout(() => {
-      if (value === undefined) {
-        resolve();
-      } else {
-        resolve(value);
-      }
+      resolve();
     }, duration);
   });
+}
+
+async function resolveAfterTimeout(duration, value) {
+  await wait(duration);
+  return value;
 };
 
-var connectionHandler = function (socket) {
+function connectionHandler(socket) {
   (async () => {
     for await (let rpc of socket.procedure('login')) {
       if (allowedUsers[rpc.data.username]) {
@@ -159,14 +160,11 @@ describe('Integration tests', function () {
       }
     })();
 
-    // TODO 2: Use to async middleware
-    server.addMiddleware(server.MIDDLEWARE_AUTHENTICATE, function (req, next) {
+    server.addMiddleware(server.MIDDLEWARE_AUTHENTICATE, async function (req) {
       if (req.authToken.username === 'alice') {
         var err = new Error('Blocked by MIDDLEWARE_AUTHENTICATE');
         err.name = 'AuthenticateMiddlewareError';
-        next(err);
-      } else {
-        next();
+        throw err;
       }
     });
 
@@ -200,31 +198,23 @@ describe('Integration tests', function () {
       assert.equal(packet.status.authError === undefined, true);
     });
 
-    it('Should send back error if JWT is invalid during handshake', function (done) {
+    it('Should send back error if JWT is invalid during handshake', async function () {
       global.localStorage.setItem('socketCluster.authToken', validSignedAuthTokenBob);
 
       client = socketCluster.create(clientOptions);
-      client.once('connect', function (statusA) {
-        // Change the setAuthKey to invalidate the current token.
-        client.transmit('setAuthKey', 'differentAuthKey')
-        .then(function () {
-          client.once('disconnect', function () {
-            client.once('connect', function (statusB) {
-              assert.equal(statusB.isAuthenticated, false);
-              assert.notEqual(statusB.authError, null);
-              assert.equal(statusB.authError.name, 'AuthTokenInvalidError');
-              done();
-            });
 
-            client.connect();
-          });
-
-          client.disconnect();
-        });
-      });
+      await client.listener('connect').once();
+      // Change the setAuthKey to invalidate the current token.
+      await client.invoke('setAuthKey', 'differentAuthKey');
+      client.disconnect();
+      client.connect();
+      let packet = await client.listener('connect').once();
+      assert.equal(packet.status.isAuthenticated, false);
+      assert.notEqual(packet.status.authError, null);
+      assert.equal(packet.status.authError.name, 'AuthTokenInvalidError');
     });
 
-    it('Should allow switching between users', function (done) {
+    it('Should allow switching between users', async function () {
       global.localStorage.setItem('socketCluster.authToken', validSignedAuthTokenBob);
 
       var authenticateEvents = [];
@@ -232,54 +222,60 @@ describe('Integration tests', function () {
       var authenticationStateChangeEvents = [];
       var authStateChangeEvents = [];
 
-      server.on('authenticationStateChange', function (socket, stateChangeData) {
-        authenticationStateChangeEvents.push({
-          socket: socket,
-          stateChangeData: stateChangeData
-        });
-      });
+      (async () => {
+        // TODO 2: Consider wrapping everything from streams inside packet objects.
+        for await (let stateChangePacket of server.listener('authenticationStateChange')) {
+          authenticationStateChangeEvents.push(stateChangePacket);
+        }
+      })();
 
-      server.on('connection', function (socket) {
-        socket.on('authenticate', function (authToken) {
-          authenticateEvents.push(authToken);
-        });
-        socket.on('deauthenticate', function (oldAuthToken) {
-          deauthenticateEvents.push(oldAuthToken);
-        });
-        socket.on('authStateChange', function (stateChangeData) {
-          authStateChangeEvents.push(stateChangeData);
-        });
-      });
+      (async () => {
+        for await (let socket of server.listener('connection')) {
+          // TODO 2: Consider wrapping everything from streams inside packet objects.
+          (async () => {
+            for await (let authToken of socket.listener('authenticate')) {
+              authenticateEvents.push(authToken);
+            }
+          })();
+          (async () => {
+            for await (let oldAuthToken of socket.listener('deauthenticate')) {
+              deauthenticateEvents.push(oldAuthToken);
+            }
+          })();
+          (async () => {
+            for await (let stateChangeData of socket.listener('authStateChange')) {
+              authStateChangeEvents.push(stateChangeData);
+            }
+          })();
+        }
+      })();
 
       var clientSocketId;
       client = socketCluster.create(clientOptions);
-      client.once('connect', function (statusA) {
-        clientSocketId = client.id;
-        client.transmit('login', {username: 'alice'});
-      });
+      await client.listener('connect').once();
+      clientSocketId = client.id;
+      client.invoke('login', {username: 'alice'});
 
-      setTimeout(function () {
-        assert.equal(deauthenticateEvents.length, 0);
-        assert.equal(authenticateEvents.length, 2);
-        assert.equal(authenticateEvents[0].username, 'bob');
-        assert.equal(authenticateEvents[1].username, 'alice');
+      await wait(100);
 
-        assert.equal(authenticationStateChangeEvents.length, 1);
-        assert.notEqual(authenticationStateChangeEvents[0].socket, null);
-        assert.equal(authenticationStateChangeEvents[0].socket.id, clientSocketId);
-        assert.equal(authenticationStateChangeEvents[0].stateChangeData.oldState, 'unauthenticated');
-        assert.equal(authenticationStateChangeEvents[0].stateChangeData.newState, 'authenticated');
-        assert.notEqual(authenticationStateChangeEvents[0].stateChangeData.authToken, null);
-        assert.equal(authenticationStateChangeEvents[0].stateChangeData.authToken.username, 'bob');
+      assert.equal(deauthenticateEvents.length, 0);
+      assert.equal(authenticateEvents.length, 2);
+      assert.equal(authenticateEvents[0].username, 'bob');
+      assert.equal(authenticateEvents[1].username, 'alice');
 
-        assert.equal(authStateChangeEvents.length, 1);
-        assert.equal(authStateChangeEvents[0].oldState, 'unauthenticated');
-        assert.equal(authStateChangeEvents[0].newState, 'authenticated');
-        assert.notEqual(authStateChangeEvents[0].authToken, null);
-        assert.equal(authStateChangeEvents[0].authToken.username, 'bob');
+      assert.equal(authenticationStateChangeEvents.length, 1);
+      assert.notEqual(authenticationStateChangeEvents[0].socket, null);
+      assert.equal(authenticationStateChangeEvents[0].socket.id, clientSocketId);
+      assert.equal(authenticationStateChangeEvents[0].status.oldState, 'unauthenticated');
+      assert.equal(authenticationStateChangeEvents[0].status.newState, 'authenticated');
+      assert.notEqual(authenticationStateChangeEvents[0].status.authToken, null);
+      assert.equal(authenticationStateChangeEvents[0].status.authToken.username, 'bob');
 
-        done();
-      }, 100);
+      assert.equal(authStateChangeEvents.length, 1);
+      assert.equal(authStateChangeEvents[0].oldState, 'unauthenticated');
+      assert.equal(authStateChangeEvents[0].newState, 'authenticated');
+      assert.notEqual(authStateChangeEvents[0].authToken, null);
+      assert.equal(authStateChangeEvents[0].authToken.username, 'bob');
     });
 
     it('Should emit correct events/data when socket is deauthenticated', function (done) {

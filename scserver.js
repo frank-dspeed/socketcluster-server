@@ -646,12 +646,18 @@ SCServer.prototype._handleSocketConnection = function (wsSocket, upgradeReq) {
 
           scSocket.state = scSocket.OPEN;
 
+          if (clientSocketStatus.isAuthenticated) {
+            // Needs to be executed after the connection event to allow
+            // consumers to be setup from inside the connection loop.
+            (async () => {
+              await this.listener('connection').once();
+              scSocket.triggerAuthenticationEvents(oldState);
+            })();
+          }
+
           scSocket.emit('connect', serverSocketStatus);
           this.emit('connection', scSocket);
 
-          if (clientSocketStatus.isAuthenticated) {
-            scSocket.triggerAuthenticationEvents(oldState);
-          }
           // Treat authentication failure as a 'soft' error
           rpc.end(clientSocketStatus);
         });
