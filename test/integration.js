@@ -278,246 +278,279 @@ describe('Integration tests', function () {
       assert.equal(authStateChangeEvents[0].authToken.username, 'bob');
     });
 
-    it('Should emit correct events/data when socket is deauthenticated', function (done) {
+    it('Should emit correct events/data when socket is deauthenticated', async function () {
       global.localStorage.setItem('socketCluster.authToken', validSignedAuthTokenBob);
 
       var authenticationStateChangeEvents = [];
       var authStateChangeEvents = [];
 
-      server.on('authenticationStateChange', function (socket, stateChangeData) {
-        authenticationStateChangeEvents.push({
-          socket: socket,
-          stateChangeData: stateChangeData
-        });
-      });
+      (async () => {
+        for await (let stateChangePacket of server.listener('authenticationStateChange')) {
+          authenticationStateChangeEvents.push(stateChangePacket);
+        }
+      })();
 
       client = socketCluster.create(clientOptions);
-      client.once('connect', function (statusA) {
-        client.deauthenticate();
-      });
 
-      server.on('connection', function (socket) {
-        var initialAuthToken = socket.authToken;
+      (async () => {
+        for await (let packet of client.listener('connect')) {
+          client.deauthenticate();
+        }
+      })();
 
-        socket.on('authStateChange', function (stateChangeData) {
+      let socket = await server.listener('connection').once();
+      let initialAuthToken = socket.authToken;
+
+      (async () => {
+        for await (let stateChangeData of socket.listener('authStateChange')) {
           authStateChangeEvents.push(stateChangeData);
-        });
+        }
+      })();
 
-        socket.on('deauthenticate', function (oldToken) {
-          assert.equal(oldToken, initialAuthToken);
+      let oldToken = await socket.listener('deauthenticate').once();
+      assert.equal(oldToken, initialAuthToken);
 
-          assert.equal(authStateChangeEvents.length, 2);
-          assert.equal(authStateChangeEvents[0].oldState, 'unauthenticated');
-          assert.equal(authStateChangeEvents[0].newState, 'authenticated');
-          assert.notEqual(authStateChangeEvents[0].authToken, null);
-          assert.equal(authStateChangeEvents[0].authToken.username, 'bob');
-          assert.equal(authStateChangeEvents[1].oldState, 'authenticated');
-          assert.equal(authStateChangeEvents[1].newState, 'unauthenticated');
-          assert.equal(authStateChangeEvents[1].authToken, null);
+      assert.equal(authStateChangeEvents.length, 2);
+      assert.equal(authStateChangeEvents[0].oldState, 'unauthenticated');
+      assert.equal(authStateChangeEvents[0].newState, 'authenticated');
+      assert.notEqual(authStateChangeEvents[0].authToken, null);
+      assert.equal(authStateChangeEvents[0].authToken.username, 'bob');
+      assert.equal(authStateChangeEvents[1].oldState, 'authenticated');
+      assert.equal(authStateChangeEvents[1].newState, 'unauthenticated');
+      assert.equal(authStateChangeEvents[1].authToken, null);
 
-          assert.equal(authenticationStateChangeEvents.length, 2);
-          assert.notEqual(authenticationStateChangeEvents[0].stateChangeData, null);
-          assert.equal(authenticationStateChangeEvents[0].stateChangeData.oldState, 'unauthenticated');
-          assert.equal(authenticationStateChangeEvents[0].stateChangeData.newState, 'authenticated');
-          assert.notEqual(authenticationStateChangeEvents[0].stateChangeData.authToken, null);
-          assert.equal(authenticationStateChangeEvents[0].stateChangeData.authToken.username, 'bob');
-          assert.notEqual(authenticationStateChangeEvents[1].stateChangeData, null);
-          assert.equal(authenticationStateChangeEvents[1].stateChangeData.oldState, 'authenticated');
-          assert.equal(authenticationStateChangeEvents[1].stateChangeData.newState, 'unauthenticated');
-          assert.equal(authenticationStateChangeEvents[1].stateChangeData.authToken, null);
-          done();
-        });
-      });
+      assert.equal(authenticationStateChangeEvents.length, 2);
+      assert.notEqual(authenticationStateChangeEvents[0].status, null);
+      assert.equal(authenticationStateChangeEvents[0].status.oldState, 'unauthenticated');
+      assert.equal(authenticationStateChangeEvents[0].status.newState, 'authenticated');
+      assert.notEqual(authenticationStateChangeEvents[0].status.authToken, null);
+      assert.equal(authenticationStateChangeEvents[0].status.authToken.username, 'bob');
+      assert.notEqual(authenticationStateChangeEvents[1].status, null);
+      assert.equal(authenticationStateChangeEvents[1].status.oldState, 'authenticated');
+      assert.equal(authenticationStateChangeEvents[1].status.newState, 'unauthenticated');
+      assert.equal(authenticationStateChangeEvents[1].status.authToken, null);
     });
 
-    it('Should not authenticate the client if MIDDLEWARE_AUTHENTICATE blocks the authentication', function (done) {
+    it('Should not authenticate the client if MIDDLEWARE_AUTHENTICATE blocks the authentication', async function () {
       global.localStorage.setItem('socketCluster.authToken', validSignedAuthTokenAlice);
 
       client = socketCluster.create(clientOptions);
       // The previous test authenticated us as 'alice', so that token will be passed to the server as
       // part of the handshake.
-      client.once('connect', function (statusB) {
-        // Any token containing the username 'alice' should be blocked by the MIDDLEWARE_AUTHENTICATE middleware.
-        // This will only affects token-based authentication, not the credentials-based login event.
-        assert.equal(statusB.isAuthenticated, false);
-        assert.notEqual(statusB.authError, null);
-        assert.equal(statusB.authError.name, 'AuthenticateMiddlewareError');
-        done();
-      });
+
+      let packet = await client.listener('connect').once();
+      // Any token containing the username 'alice' should be blocked by the MIDDLEWARE_AUTHENTICATE middleware.
+      // This will only affects token-based authentication, not the credentials-based login event.
+      assert.equal(packet.status.isAuthenticated, false);
+      assert.notEqual(packet.status.authError, null);
+      assert.equal(packet.status.authError.name, 'AuthenticateMiddlewareError');
     });
 
-    it('Token should be available after Promise resolves if token engine signing is synchronous', function (done) {
+    it('Token should be available after Promise resolves if token engine signing is synchronous', async function () {
       portNumber++;
       server = socketClusterServer.listen(portNumber, {
         authKey: serverOptions.authKey,
         wsEngine: WS_ENGINE,
         authSignAsync: false
       });
-      server.on('connection', connectionHandler);
-      server.on('ready', function () {
-        client = socketCluster.create({
-          hostname: clientOptions.hostname,
-          port: portNumber,
-          multiplex: false
-        });
-        client.once('connect', function (statusA) {
-          client.invoke('login', {username: 'bob'})
-          .then(function () {
-            assert.equal(client.authState, 'authenticated');
-            assert.notEqual(client.authToken, null);
-            assert.equal(client.authToken.username, 'bob');
-            done();
-          });
-        });
+
+      (async () => {
+        for await (let socket of server.listener('connection')) {
+          connectionHandler(socket);
+        }
+      })();
+
+      await server.listener('ready').once();
+
+      client = socketCluster.create({
+        hostname: clientOptions.hostname,
+        port: portNumber,
+        multiplex: false
       });
+
+      await client.listener('connect').once();
+
+      client.invoke('login', {username: 'bob'});
+      await client.listener('authenticate').once();
+
+      assert.equal(client.authState, 'authenticated');
+      assert.notEqual(client.authToken, null);
+      assert.equal(client.authToken.username, 'bob');
     });
 
-    it('If token engine signing is asynchronous, authentication can be captured using the authenticate event', function (done) {
+    it('If token engine signing is asynchronous, authentication can be captured using the authenticate event', async function () {
       portNumber++;
       server = socketClusterServer.listen(portNumber, {
         authKey: serverOptions.authKey,
         wsEngine: WS_ENGINE,
         authSignAsync: true
       });
-      server.on('connection', connectionHandler);
-      server.on('ready', function () {
-        client = socketCluster.create({
-          hostname: clientOptions.hostname,
-          port: portNumber,
-          multiplex: false
-        });
-        client.once('connect', function (statusA) {
-          client.transmit('login', {username: 'bob'});
-          client.on('authenticate', function (newSignedToken) {
-            assert.equal(client.authState, 'authenticated');
-            assert.notEqual(client.authToken, null);
-            assert.equal(client.authToken.username, 'bob');
-            done();
-          });
-        });
+
+      (async () => {
+        for await (let socket of server.listener('connection')) {
+          connectionHandler(socket);
+        }
+      })();
+
+      await server.listener('ready').once();
+
+      client = socketCluster.create({
+        hostname: clientOptions.hostname,
+        port: portNumber,
+        multiplex: false
       });
+
+      await client.listener('connect').once();
+
+      client.invoke('login', {username: 'bob'});
+      let newSignedToken = await client.listener('authenticate').once();
+
+      assert.equal(client.authState, 'authenticated');
+      assert.notEqual(client.authToken, null);
+      assert.equal(client.authToken.username, 'bob');
     });
 
-    it('Should still work if token verification is asynchronous', function (done) {
+    it('Should still work if token verification is asynchronous', async function () {
       portNumber++;
       server = socketClusterServer.listen(portNumber, {
         authKey: serverOptions.authKey,
         wsEngine: WS_ENGINE,
         authVerifyAsync: false
       });
-      server.on('connection', connectionHandler);
-      server.on('ready', function () {
-        client = socketCluster.create({
-          hostname: clientOptions.hostname,
-          port: portNumber,
-          multiplex: false
-        });
-        client.once('connect', function (statusA) {
-          client.transmit('login', {username: 'bob'});
-          client.once('authenticate', function (newSignedToken) {
-            client.once('disconnect', function () {
-              client.once('connect', function (statusB) {
-                assert.equal(statusB.isAuthenticated, true);
-                assert.notEqual(client.authToken, null);
-                assert.equal(client.authToken.username, 'bob');
-                done();
-              });
-              client.connect();
-            });
-            client.disconnect();
-          });
-        });
+
+      (async () => {
+        for await (let socket of server.listener('connection')) {
+          connectionHandler(socket);
+        }
+      })();
+
+      await server.listener('ready').once();
+
+      client = socketCluster.create({
+        hostname: clientOptions.hostname,
+        port: portNumber,
+        multiplex: false
       });
+
+      await client.listener('connect').once();
+
+      client.invoke('login', {username: 'bob'});
+
+      await client.listener('authenticate').once();
+
+      client.disconnect();
+      client.connect();
+
+      let packet = await client.listener('connect').once();
+
+      assert.equal(packet.status.isAuthenticated, true);
+      assert.notEqual(client.authToken, null);
+      assert.equal(client.authToken.username, 'bob');
     });
 
-    it('Should set the correct expiry when using expiresIn option when creating a JWT with socket.setAuthToken', function (done) {
+    it('Should set the correct expiry when using expiresIn option when creating a JWT with socket.setAuthToken', async function () {
       portNumber++;
       server = socketClusterServer.listen(portNumber, {
         authKey: serverOptions.authKey,
         wsEngine: WS_ENGINE,
         authVerifyAsync: false
       });
-      server.on('connection', connectionHandler);
-      server.on('ready', function () {
-        client = socketCluster.create({
-          hostname: clientOptions.hostname,
-          port: portNumber,
-          multiplex: false
-        });
-        client.once('connect', function (statusA) {
-          client.once('authenticate', function (newSignedToken) {
-            assert.notEqual(client.authToken, null);
-            assert.notEqual(client.authToken.exp, null);
-            var dateMillisecondsInTenDays = Date.now() + TEN_DAYS_IN_SECONDS * 1000;
-            var dateDifference = Math.abs(dateMillisecondsInTenDays - client.authToken.exp * 1000);
-            // Expiry must be accurate within 1000 milliseconds.
-            assert.equal(dateDifference < 1000, true);
-            done();
-          });
-          client.transmit('loginWithTenDayExpiry', {username: 'bob'});
-        });
+
+      (async () => {
+        for await (let socket of server.listener('connection')) {
+          connectionHandler(socket);
+        }
+      })();
+
+      await server.listener('ready').once();
+
+      client = socketCluster.create({
+        hostname: clientOptions.hostname,
+        port: portNumber,
+        multiplex: false
       });
+
+      await client.listener('connect').once();
+      client.invoke('loginWithTenDayExpiry', {username: 'bob'});
+      await client.listener('authenticate').once();
+
+      assert.notEqual(client.authToken, null);
+      assert.notEqual(client.authToken.exp, null);
+      var dateMillisecondsInTenDays = Date.now() + TEN_DAYS_IN_SECONDS * 1000;
+      var dateDifference = Math.abs(dateMillisecondsInTenDays - client.authToken.exp * 1000);
+      // Expiry must be accurate within 1000 milliseconds.
+      assert.equal(dateDifference < 1000, true);
     });
 
-    it('Should set the correct expiry when adding exp claim when creating a JWT with socket.setAuthToken', function (done) {
+    it('Should set the correct expiry when adding exp claim when creating a JWT with socket.setAuthToken', async function () {
       portNumber++;
       server = socketClusterServer.listen(portNumber, {
         authKey: serverOptions.authKey,
         wsEngine: WS_ENGINE,
         authVerifyAsync: false
       });
-      server.on('connection', connectionHandler);
-      server.on('ready', function () {
-        client = socketCluster.create({
-          hostname: clientOptions.hostname,
-          port: portNumber,
-          multiplex: false
-        });
-        client.once('connect', function (statusA) {
-          client.once('authenticate', function (newSignedToken) {
-            assert.notEqual(client.authToken, null);
-            assert.notEqual(client.authToken.exp, null);
-            var dateMillisecondsInTenDays = Date.now() + TEN_DAYS_IN_SECONDS * 1000;
-            var dateDifference = Math.abs(dateMillisecondsInTenDays - client.authToken.exp * 1000);
-            // Expiry must be accurate within 1000 milliseconds.
-            assert.equal(dateDifference < 1000, true);
-            done();
-          });
-          client.transmit('loginWithTenDayExp', {username: 'bob'});
-        });
+
+      (async () => {
+        for await (let socket of server.listener('connection')) {
+          connectionHandler(socket);
+        }
+      })();
+
+      await server.listener('ready').once();
+
+      client = socketCluster.create({
+        hostname: clientOptions.hostname,
+        port: portNumber,
+        multiplex: false
       });
+
+      await client.listener('connect').once();
+      client.invoke('loginWithTenDayExp', {username: 'bob'});
+      await client.listener('authenticate').once();
+
+      assert.notEqual(client.authToken, null);
+      assert.notEqual(client.authToken.exp, null);
+      var dateMillisecondsInTenDays = Date.now() + TEN_DAYS_IN_SECONDS * 1000;
+      var dateDifference = Math.abs(dateMillisecondsInTenDays - client.authToken.exp * 1000);
+      // Expiry must be accurate within 1000 milliseconds.
+      assert.equal(dateDifference < 1000, true);
     });
 
-    it('The exp claim should have priority over expiresIn option when using socket.setAuthToken', function (done) {
+    it('The exp claim should have priority over expiresIn option when using socket.setAuthToken', async function () {
       portNumber++;
       server = socketClusterServer.listen(portNumber, {
         authKey: serverOptions.authKey,
         wsEngine: WS_ENGINE,
         authVerifyAsync: false
       });
-      server.on('connection', connectionHandler);
-      server.on('ready', function () {
-        client = socketCluster.create({
-          hostname: clientOptions.hostname,
-          port: portNumber,
-          multiplex: false
-        });
-        client.once('connect', function (statusA) {
-          client.once('authenticate', function (newSignedToken) {
-            assert.notEqual(client.authToken, null);
-            assert.notEqual(client.authToken.exp, null);
-            var dateMillisecondsInTenDays = Date.now() + TEN_DAYS_IN_SECONDS * 1000;
-            var dateDifference = Math.abs(dateMillisecondsInTenDays - client.authToken.exp * 1000);
-            // Expiry must be accurate within 1000 milliseconds.
-            assert.equal(dateDifference < 1000, true);
-            done();
-          });
-          client.transmit('loginWithTenDayExpAndExpiry', {username: 'bob'});
-        });
+
+      (async () => {
+        for await (let socket of server.listener('connection')) {
+          connectionHandler(socket);
+        }
+      })();
+
+      await server.listener('ready').once();
+
+      client = socketCluster.create({
+        hostname: clientOptions.hostname,
+        port: portNumber,
+        multiplex: false
       });
+
+      await client.listener('connect').once();
+      client.invoke('loginWithTenDayExpAndExpiry', {username: 'bob'});
+      await client.listener('authenticate').once();
+
+      assert.notEqual(client.authToken, null);
+      assert.notEqual(client.authToken.exp, null);
+      var dateMillisecondsInTenDays = Date.now() + TEN_DAYS_IN_SECONDS * 1000;
+      var dateDifference = Math.abs(dateMillisecondsInTenDays - client.authToken.exp * 1000);
+      // Expiry must be accurate within 1000 milliseconds.
+      assert.equal(dateDifference < 1000, true);
     });
 
-    it('Should send back error if socket.setAuthToken tries to set both iss claim and issuer option', function (done) {
+    it('Should send back error if socket.setAuthToken tries to set both iss claim and issuer option', async function () {
       portNumber++;
       server = socketClusterServer.listen(portNumber, {
         authKey: serverOptions.authKey,
@@ -526,33 +559,64 @@ describe('Integration tests', function () {
       });
       var warningMap = {};
 
-      server.on('connection', connectionHandler);
-      server.on('ready', function () {
-        client = socketCluster.create({
-          hostname: clientOptions.hostname,
-          port: portNumber,
-          multiplex: false
-        });
-        client.once('connect', function (statusA) {
-          client.once('authenticate', function (newSignedToken) {
-            throw new Error('Should not pass authentication because the signature should fail');
-          });
-          server.on('warning', function (warning) {
-            assert.notEqual(warning, null);
-            warningMap[warning.name] = warning;
-          });
-          client.once('error', function (err) {
-            assert.notEqual(err, null);
-            assert.equal(err.name, 'SocketProtocolError');
-          });
-          client.transmit('loginWithIssAndIssuer', {username: 'bob'});
-          setTimeout(function () {
-            server.removeAllListeners('warning');
-            assert.notEqual(warningMap['SocketProtocolError'], null);
-            done();
-          }, 1000);
-        });
+      (async () => {
+        for await (let socket of server.listener('connection')) {
+          connectionHandler(socket);
+        }
+      })();
+
+      await server.listener('ready').once();
+
+      client = socketCluster.create({
+        hostname: clientOptions.hostname,
+        port: portNumber,
+        multiplex: false
       });
+
+      await client.listener('connect').once();
+
+      (async () => {
+        await client.listener('authenticate').once();
+        throw new Error('Should not pass authentication because the signature should fail');
+      })();
+
+      (async () => {
+        for await (let warning of server.listener('warning')) {
+          assert.notEqual(warning, null);
+          warningMap[warning.name] = warning;
+        }
+      })();
+
+      (async () => {
+        for await (let err of server.listener('error')) {
+          assert.notEqual(err, null);
+          assert.equal(err.name, 'SocketProtocolError');
+        }
+      })();
+
+      let closePackets = [];
+
+      (async () => {
+        let packet = await client.listener('close').once();
+        closePackets.push(packet);
+      })();
+
+      let error;
+      try {
+        await client.invoke('loginWithIssAndIssuer', {username: 'bob'});
+      } catch (err) {
+        error = err;
+      }
+
+      assert.notEqual(error, null);
+      assert.equal(error.name, 'BadConnectionError');
+
+      await wait(1000);
+      
+      assert.equal(closePackets.length, 1);
+      assert.equal(closePackets[0].code, 4002);
+      server.closeListener('warning');
+      assert.notEqual(warningMap['SocketProtocolError'], null);
     });
 
     it('Should trigger an authTokenSigned event and socket.signedAuthToken should be set after calling the socket.setAuthToken method', function (done) {
@@ -590,7 +654,7 @@ describe('Integration tests', function () {
           multiplex: false
         });
         client.once('connect', function (statusA) {
-          client.transmit('login', {username: 'bob'});
+          client.invoke('login', {username: 'bob'});
         });
         setTimeout(function () {
           assert.equal(authTokenSignedEventEmitted, true);
@@ -641,7 +705,7 @@ describe('Integration tests', function () {
           multiplex: false
         });
         client.once('connect', function (statusA) {
-          client.transmit('login', {username: 'bob'});
+          client.invoke('login', {username: 'bob'});
         });
       });
     });
@@ -690,7 +754,7 @@ describe('Integration tests', function () {
           multiplex: false
         });
         client.once('connect', function (statusA) {
-          client.transmit('login', {username: 'bob'});
+          client.invoke('login', {username: 'bob'});
         });
       });
     });
@@ -1876,7 +1940,7 @@ describe('Integration tests', function () {
           multiplex: false
         });
 
-        client.transmit('login', {username: 'bob'});
+        client.invoke('login', {username: 'bob'});
         client.once('authenticate', function (state) {
           assert.equal(middlewareWasExecuted, true);
           done();

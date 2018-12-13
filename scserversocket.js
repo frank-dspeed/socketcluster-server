@@ -497,7 +497,7 @@ SCServerSocket.prototype.setAuthToken = function (data, options) {
       this.signedAuthToken = result.signedToken;
       this.emit('authTokenSigned', result.signedToken);
     }
-    return this.invoke('#setAuthToken', tokenData)
+    return this.invoke('#setAuthToken', tokenData) // TODO 22: Use async/await instead of promises everywhere
     .catch((err) => {
       var authError = new AuthError('Failed to deliver auth token to client - ' + err.message);
       this.emit('error', authError);
