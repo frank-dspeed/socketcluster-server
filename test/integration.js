@@ -612,14 +612,14 @@ describe('Integration tests', function () {
       assert.equal(error.name, 'BadConnectionError');
 
       await wait(1000);
-      
+
       assert.equal(closePackets.length, 1);
       assert.equal(closePackets[0].code, 4002);
       server.closeListener('warning');
       assert.notEqual(warningMap['SocketProtocolError'], null);
     });
 
-    it('Should trigger an authTokenSigned event and socket.signedAuthToken should be set after calling the socket.setAuthToken method', function (done) {
+    it('Should trigger an authTokenSigned event and socket.signedAuthToken should be set after calling the socket.setAuthToken method', async function () {
       portNumber++;
       server = socketClusterServer.listen(portNumber, {
         authKey: serverOptions.authKey,
@@ -629,41 +629,47 @@ describe('Integration tests', function () {
 
       var authTokenSignedEventEmitted = false;
 
-      server.on('connection', function (socket) {
-        socket.on('authTokenSigned', function (signedAuthToken) {
-          authTokenSignedEventEmitted = true;
-          assert.notEqual(signedAuthToken, null);
-          assert.equal(signedAuthToken, socket.signedAuthToken);
-        });
-        socket.on('login', function (userDetails, respond) {
-          if (allowedUsers[userDetails.username]) {
-            socket.setAuthToken(userDetails, {async: true});
-            respond();
-          } else {
-            var err = new Error('Failed to login');
-            err.name = 'FailedLoginError';
-            respond(err);
-          }
-        });
+      (async () => {
+        for await (let socket of server.listener('connection')) {
+          (async () => {
+            for await (let signedAuthToken of socket.listener('authTokenSigned')) {
+              authTokenSignedEventEmitted = true;
+              assert.notEqual(signedAuthToken, null);
+              assert.equal(signedAuthToken, socket.signedAuthToken);
+            }
+          })();
+
+          (async () => {
+            for await (let req of socket.procedure('login')) {
+              if (allowedUsers[req.data.username]) {
+                socket.setAuthToken(req.data, {async: true});
+                req.end();
+              } else {
+                var err = new Error('Failed to login');
+                err.name = 'FailedLoginError';
+                req.error(err);
+              }
+            }
+          })();
+        }
+      })();
+
+      await server.listener('ready').once();
+
+      client = socketCluster.create({
+        hostname: clientOptions.hostname,
+        port: portNumber,
+        multiplex: false
       });
 
-      server.on('ready', function () {
-        client = socketCluster.create({
-          hostname: clientOptions.hostname,
-          port: portNumber,
-          multiplex: false
-        });
-        client.once('connect', function (statusA) {
-          client.invoke('login', {username: 'bob'});
-        });
-        setTimeout(function () {
-          assert.equal(authTokenSignedEventEmitted, true);
-          done();
-        }, 100);
-      });
+      await client.listener('connect').once();
+      await client.invoke('login', {username: 'bob'});
+      await client.listener('authenticate').once();
+
+      assert.equal(authTokenSignedEventEmitted, true);
     });
 
-    it('Should reject Promise returned by socket.setAuthToken if token delivery fails and rejectOnFailedDelivery option is true', function (done) {
+    it('Should reject Promise returned by socket.setAuthToken if token delivery fails and rejectOnFailedDelivery option is true', async function () {
       portNumber++;
       server = socketClusterServer.listen(portNumber, {
         authKey: serverOptions.authKey,
@@ -674,40 +680,43 @@ describe('Integration tests', function () {
 
       var socketErrors = [];
 
-      server.on('connection', function (socket) {
-        socket.on('error', function (err) {
-          socketErrors.push(err);
-        });
-        socket.on('login', function (userDetails, respond) {
-          if (allowedUsers[userDetails.username]) {
-            client.disconnect();
-            socket.setAuthToken(userDetails, {rejectOnFailedDelivery: true})
-            .catch((err) => {
-              assert.notEqual(err, null);
-              assert.equal(err.name, 'AuthError');
-              assert.notEqual(socketErrors[0], null);
-              assert.equal(socketErrors[0].name, 'AuthError');
-              done();
-            });
-            respond();
-          } else {
-            var err = new Error('Failed to login');
-            err.name = 'FailedLoginError';
-            respond(err);
-          }
-        });
-      });
-
-      server.on('ready', function () {
+      (async () => {
+        await server.listener('ready').once();
         client = socketCluster.create({
           hostname: clientOptions.hostname,
           port: portNumber,
           multiplex: false
         });
-        client.once('connect', function (statusA) {
-          client.invoke('login', {username: 'bob'});
-        });
-      });
+        await client.listener('connect').once();
+        client.invoke('login', {username: 'bob'});
+      })();
+
+      let socket = await server.listener('connection').once();
+
+      (async () => {
+        for await (let err of socket.listener('error')) {
+          socketErrors.push(err);
+        }
+      })();
+
+      let req = await socket.procedure('login').once();
+      if (allowedUsers[req.data.username]) {
+        req.end();
+        socket.disconnect();
+        try {
+          await socket.setAuthToken(req.data, {rejectOnFailedDelivery: true});
+        } catch (err) {
+          assert.notEqual(err, null);
+          assert.equal(err.name, 'AuthError');
+          await wait(0);
+          assert.notEqual(socketErrors[0], null);
+          assert.equal(socketErrors[0].name, 'AuthError');
+        }
+      } else {
+        var err = new Error('Failed to login');
+        err.name = 'FailedLoginError';
+        req.error(err);
+      }
     });
 
     it('Should not reject Promise returned by socket.setAuthToken if token delivery fails and rejectOnFailedDelivery option is not true', function (done) {
