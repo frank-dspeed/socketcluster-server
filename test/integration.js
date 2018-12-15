@@ -970,7 +970,7 @@ describe('Integration tests', function () {
     });
   });
 
-  describe('Socket disconnection', function () {
+  describe.skip('Socket disconnection', function () {
     it('Server-side socket disconnect event should not trigger if the socket did not complete the handshake; instead, it should trigger connectAbort', async function () {
       portNumber++;
       server = socketClusterServer.listen(portNumber, {
@@ -1254,26 +1254,33 @@ describe('Integration tests', function () {
   });
 
   describe('Socket pub/sub', function () {
-    it('Should support subscription batching', function (done) {
+    it('Should support subscription batching', async function () {
       portNumber++;
       server = socketClusterServer.listen(portNumber, {
         authKey: serverOptions.authKey,
         wsEngine: WS_ENGINE
       });
-      server.on('connection', function (socket) {
-        connectionHandler(socket);
-        var isFirstMessage = true;
-        socket.on('message', function (rawMessage) {
-          if (isFirstMessage) {
-            var data = JSON.parse(rawMessage);
-            // All 20 subscriptions should arrive as a single message.
-            assert.equal(data.length, 20);
-            isFirstMessage = false;
-          }
-        });
-      });
+
+      (async () => {
+        for await (let socket of server.listener('connection')) {
+          connectionHandler(socket);
+          var isFirstMessage = true;
+
+          (async () => {
+            for await (let rawMessage of socket.listener('message')) {
+              if (isFirstMessage) {
+                var data = JSON.parse(rawMessage);
+                // All 20 subscriptions should arrive as a single message.
+                assert.equal(data.length, 20);
+                isFirstMessage = false;
+              }
+            }
+          })();
+        }
+      })();
 
       var subscribeMiddlewareCounter = 0;
+
       // Each subscription should pass through the middleware individually, even
       // though they were sent as a batch/array.
       server.addMiddleware(server.MIDDLEWARE_SUBSCRIBE, function (req, next) {
@@ -1291,169 +1298,193 @@ describe('Integration tests', function () {
         next();
       });
 
-      server.on('ready', function () {
-        client = socketCluster.create({
-          hostname: clientOptions.hostname,
-          port: portNumber,
-          multiplex: false
-        });
-        var channelList = [];
-        for (var i = 0; i < 20; i++) {
-          var subscribeOptions = {
-            batch: true
-          };
-          if (i === 10) {
-            subscribeOptions.data = {foo: 123};
-          }
-          channelList.push(
-            client.subscribe('my-channel-' + i, subscribeOptions)
-          );
-        }
-        channelList[12].on('subscribe', function (err) {
-          throw new Error('The my-channel-12 channel should have been blocked by MIDDLEWARE_SUBSCRIBE');
-        });
-        channelList[12].on('subscribeFail', function (err) {
-          assert.notEqual(err, null);
-          assert.equal(err.name, 'UnauthorizedSubscribeError');
-        });
-        channelList[19].watch(function (data) {
-          assert.equal(data, 'Hello!');
-          assert.equal(subscribeMiddlewareCounter, 20);
-          done();
-        });
-        channelList[0].on('subscribe', function () {
-          client.publish('my-channel-19', 'Hello!');
-        });
+      await server.listener('ready').once();
+
+      client = socketCluster.create({
+        hostname: clientOptions.hostname,
+        port: portNumber,
+        multiplex: false
       });
+
+      var channelList = [];
+      for (var i = 0; i < 20; i++) {
+        var subscribeOptions = {
+          batch: true
+        };
+        if (i === 10) {
+          subscribeOptions.data = {foo: 123};
+        }
+        channelList.push(
+          client.subscribe('my-channel-' + i, subscribeOptions)
+        );
+      }
+
+      (async () => {
+        for await (let packet of channelList[12].listener('subscribe')) {
+          throw new Error('The my-channel-12 channel should have been blocked by MIDDLEWARE_SUBSCRIBE');
+        }
+      })();
+
+      (async () => {
+        for await (let packet of channelList[12].listener('subscribeFail')) {
+          assert.notEqual(packet.error, null);
+          assert.equal(packet.error.name, 'UnauthorizedSubscribeError');
+        }
+      })();
+
+      (async () => {
+        for await (let packet of channelList[0].listener('subscribe')) {
+          client.publish('my-channel-19', 'Hello!');
+        }
+      })();
+
+      for await (let data of channelList[19]) {
+        assert.equal(data, 'Hello!');
+        assert.equal(subscribeMiddlewareCounter, 20);
+        break;
+      }
     });
 
-    it('Client should not be able to subscribe to a channel before the handshake has completed', function (done) {
+    it('Client should not be able to subscribe to a channel before the handshake has completed', async function () {
       portNumber++;
       server = socketClusterServer.listen(portNumber, {
         authKey: serverOptions.authKey,
         wsEngine: WS_ENGINE
       });
+
       server.setAuthEngine({
         verifyToken: function (signedAuthToken, verificationKey, verificationOptions) {
           return resolveAfterTimeout(500, {});
         }
       });
-      server.on('connection', connectionHandler);
-      server.on('ready', function () {
-        client = socketCluster.create({
-          hostname: clientOptions.hostname,
-          port: portNumber,
-          multiplex: false
-        });
 
-        var isSubscribed = false;
-        var error;
+      (async () => {
+        for await (let socket of server.listener('connection')) {
+          connectionHandler(socket);
+        }
+      })();
 
-        server.on('subscription', function (socket, channel) {
-          isSubscribed = true;
-        });
+      await server.listener('ready').once();
 
-        // Hack to capture the error without relying on the standard client flow.
-        client.transport._callbackMap[2] = {
-          event: '#subscribe',
-          data: {"channel":"someChannel"},
-          callback: function (err) {
-            error = err;
-          }
-        };
-
-        // Trick the server by sending a fake subscribe before the handshake is done.
-        client.transport.socket.on('open', function () {
-          client.send('{"event":"#subscribe","data":{"channel":"someChannel"},"cid":2}');
-        });
-
-        setTimeout(function () {
-          assert.equal(isSubscribed, false);
-          assert.notEqual(error, null);
-          assert.equal(error.name, 'InvalidActionError');
-          done();
-        }, 1000);
+      client = socketCluster.create({
+        hostname: clientOptions.hostname,
+        port: portNumber,
+        multiplex: false
       });
+
+      var isSubscribed = false;
+      var error;
+
+      (async () => {
+        for await (let packet of server.listener('subscription')) {
+          isSubscribed = true;
+        }
+      })();
+
+      // Hack to capture the error without relying on the standard client flow.
+      client.transport._callbackMap[2] = {
+        event: '#subscribe',
+        data: {"channel":"someChannel"},
+        callback: function (err) {
+          error = err;
+        }
+      };
+
+      // Trick the server by sending a fake subscribe before the handshake is done.
+      client.transport.socket.on('open', function () {
+        client.send('{"event":"#subscribe","data":{"channel":"someChannel"},"cid":2}');
+      });
+
+      await wait(1000);
+      assert.equal(isSubscribed, false);
+      assert.notEqual(error, null);
+      assert.equal(error.name, 'InvalidActionError');
     });
 
-    it('Server should be able to handle invalid #subscribe and #unsubscribe and #publish packets without crashing', function (done) {
+    it('Server should be able to handle invalid #subscribe and #unsubscribe and #publish packets without crashing', async function () {
       portNumber++;
       server = socketClusterServer.listen(portNumber, {
         authKey: serverOptions.authKey,
         wsEngine: WS_ENGINE
       });
 
-      server.on('connection', connectionHandler);
+      (async () => {
+        for await (let socket of server.listener('connection')) {
+          connectionHandler(socket);
+        }
+      })();
 
-      server.on('ready', function () {
-        client = socketCluster.create({
-          hostname: clientOptions.hostname,
-          port: portNumber,
-          multiplex: false
-        });
+      await server.listener('ready').once();
 
-        var nullInChannelArrayError;
-        var objectAsChannelNameError;
-        var nullChannelNameError;
-        var nullUnsubscribeError;
+      client = socketCluster.create({
+        hostname: clientOptions.hostname,
+        port: portNumber,
+        multiplex: false
+      });
 
-        var undefinedPublishError;
-        var objectAsChannelNamePublishError;
-        var nullPublishError;
+      var nullInChannelArrayError;
+      var objectAsChannelNameError;
+      var nullChannelNameError;
+      var nullUnsubscribeError;
 
-        // Hacks to capture the errors without relying on the standard client flow.
-        client.transport._callbackMap[2] = {
-          event: '#subscribe',
-          data: [null],
-          callback: function (err) {
-            nullInChannelArrayError = err;
-          }
-        };
-        client.transport._callbackMap[3] = {
-          event: '#subscribe',
-          data: {"channel": {"hello": 123}},
-          callback: function (err) {
-            objectAsChannelNameError = err;
-          }
-        };
-        client.transport._callbackMap[4] = {
-          event: '#subscribe',
-          data: null,
-          callback: function (err) {
-            nullChannelNameError = err;
-          }
-        };
-        client.transport._callbackMap[5] = {
-          event: '#unsubscribe',
-          data: [null],
-          callback: function (err) {
-            nullUnsubscribeError = err;
-          }
-        };
-        client.transport._callbackMap[6] = {
-          event: '#publish',
-          data: null,
-          callback: function (err) {
-            undefinedPublishError = err;
-          }
-        };
-        client.transport._callbackMap[7] = {
-          event: '#publish',
-          data: {"channel": {"hello": 123}},
-          callback: function (err) {
-            objectAsChannelNamePublishError = err;
-          }
-        };
-        client.transport._callbackMap[8] = {
-          event: '#publish',
-          data: {"channel": null},
-          callback: function (err) {
-            nullPublishError = err;
-          }
-        };
+      var undefinedPublishError;
+      var objectAsChannelNamePublishError;
+      var nullPublishError;
 
-        // Trick the server by sending a fake subscribe before the handshake is done.
-        client.on('connect', function () {
+      // Hacks to capture the errors without relying on the standard client flow.
+      client.transport._callbackMap[2] = {
+        event: '#subscribe',
+        data: [null],
+        callback: function (err) {
+          nullInChannelArrayError = err;
+        }
+      };
+      client.transport._callbackMap[3] = {
+        event: '#subscribe',
+        data: {"channel": {"hello": 123}},
+        callback: function (err) {
+          objectAsChannelNameError = err;
+        }
+      };
+      client.transport._callbackMap[4] = {
+        event: '#subscribe',
+        data: null,
+        callback: function (err) {
+          nullChannelNameError = err;
+        }
+      };
+      client.transport._callbackMap[5] = {
+        event: '#unsubscribe',
+        data: [null],
+        callback: function (err) {
+          nullUnsubscribeError = err;
+        }
+      };
+      client.transport._callbackMap[6] = {
+        event: '#publish',
+        data: null,
+        callback: function (err) {
+          undefinedPublishError = err;
+        }
+      };
+      client.transport._callbackMap[7] = {
+        event: '#publish',
+        data: {"channel": {"hello": 123}},
+        callback: function (err) {
+          objectAsChannelNamePublishError = err;
+        }
+      };
+      client.transport._callbackMap[8] = {
+        event: '#publish',
+        data: {"channel": null},
+        callback: function (err) {
+          nullPublishError = err;
+        }
+      };
+
+      (async () => {
+        for await (let packet of client.listener('connect')) {
+          // Trick the server by sending a fake subscribe before the handshake is done.
           client.send('{"event":"#subscribe","data":[null],"cid":2}');
           client.send('{"event":"#subscribe","data":{"channel":{"hello":123}},"cid":3}');
           client.send('{"event":"#subscribe","data":null,"cid":4}');
@@ -1461,30 +1492,21 @@ describe('Integration tests', function () {
           client.send('{"event":"#publish","data":null,"cid":6}');
           client.send('{"event":"#publish","data":{"channel":{"hello":123}},"cid":7}');
           client.send('{"event":"#publish","data":{"channel":null},"cid":8}');
-        });
+        }
+      })();
 
-        setTimeout(function () {
-          assert.notEqual(nullInChannelArrayError, null);
-          // console.log('nullInChannelArrayError:', nullInChannelArrayError);
-          assert.notEqual(objectAsChannelNameError, null);
-          // console.log('objectAsChannelNameError:', objectAsChannelNameError);
-          assert.notEqual(nullChannelNameError, null);
-          // console.log('nullChannelNameError:', nullChannelNameError);
-          assert.notEqual(nullUnsubscribeError, null);
-          // console.log('nullUnsubscribeError:', nullUnsubscribeError);
-          assert.notEqual(undefinedPublishError, null);
-          // console.log('undefinedPublishError:', undefinedPublishError);
-          assert.notEqual(objectAsChannelNamePublishError, null);
-          // console.log('objectAsChannelNamePublishError:', objectAsChannelNamePublishError);
-          assert.notEqual(nullPublishError, null);
-          // console.log('nullPublishError:', nullPublishError);
+      await wait(300);
 
-          done();
-        }, 300);
-      });
+      assert.notEqual(nullInChannelArrayError, null);
+      assert.notEqual(objectAsChannelNameError, null);
+      assert.notEqual(nullChannelNameError, null);
+      assert.notEqual(nullUnsubscribeError, null);
+      assert.notEqual(undefinedPublishError, null);
+      assert.notEqual(objectAsChannelNamePublishError, null);
+      assert.notEqual(nullPublishError, null);
     });
 
-    it('When default SCSimpleBroker broker engine is used, unsubscribe event should trigger before disconnect event', function (done) {
+    it('When default SCSimpleBroker broker engine is used, disconnect event should trigger before unsubscribe event', async function () {
       portNumber++;
       server = socketClusterServer.listen(portNumber, {
         authKey: serverOptions.authKey,
@@ -1493,43 +1515,45 @@ describe('Integration tests', function () {
 
       var eventList = [];
 
-      server.on('connection', function (socket) {
-        socket.on('unsubscribe', function (channel) {
-          eventList.push({
-            type: 'unsubscribe',
-            channel: channel
-          });
-        });
-        socket.on('disconnect', function (code, reason) {
-          eventList.push({
-            type: 'disconnect',
-            code: code,
-            reason: reason
-          });
-          assert.equal(eventList[0].type, 'unsubscribe');
-          assert.equal(eventList[0].channel, 'foo');
-          assert.equal(eventList[1].type, 'disconnect');
+      (async () => {
+        await server.listener('ready').once();
 
-          done();
-        });
-      });
-
-      server.on('ready', function () {
         client = socketCluster.create({
           hostname: clientOptions.hostname,
           port: portNumber,
           multiplex: false
         });
 
-        client.subscribe('foo').on('subscribe', function () {
-          setTimeout(function () {
-            client.disconnect();
-          }, 200);
-        });
+        await client.subscribe('foo').listener('subscribe').once();
+        await wait(200);
+        client.disconnect();
+      })();
+
+      let socket = await server.listener('connection').once();
+
+      (async () => {
+        for await (let packet of socket.listener('unsubscribe')) {
+          eventList.push({
+            type: 'unsubscribe',
+            channel: packet.channel
+          });
+        }
+      })();
+
+      let disconnectPacket = await socket.listener('disconnect').once();
+      eventList.push({
+        type: 'disconnect',
+        code: disconnectPacket.code,
+        reason: disconnectPacket.data
       });
+
+      await wait(0);
+      assert.equal(eventList[0].type, 'disconnect');
+      assert.equal(eventList[1].type, 'unsubscribe');
+      assert.equal(eventList[1].channel, 'foo');
     });
 
-    it('When disconnecting a socket, the unsubscribe event should trigger before disconnect event (accounting for delayed unsubscribe by brokerEngine)', function (done) {
+    it('When disconnecting a socket, the unsubscribe event should trigger after the disconnect event', async function () {
       portNumber++;
       var customBrokerEngine = new SCSimpleBroker();
       var defaultUnsubscribeSocket = customBrokerEngine.unsubscribeSocket;
@@ -1545,45 +1569,48 @@ describe('Integration tests', function () {
 
       var eventList = [];
 
-      server.on('connection', function (socket) {
-        socket.on('unsubscribe', function (channel) {
-          eventList.push({
-            type: 'unsubscribe',
-            channel: channel
-          });
-        });
-        socket.on('disconnect', function (code, reason) {
-          eventList.push({
-            type: 'disconnect',
-            code: code,
-            reason: reason
-          });
-
-          assert.equal(eventList[0].type, 'unsubscribe');
-          assert.equal(eventList[0].channel, 'foo');
-          assert.equal(eventList[1].type, 'disconnect');
-
-          done();
-        });
-      });
-
-      server.on('ready', function () {
+      (async () => {
+        await server.listener('ready').once();
         client = socketCluster.create({
           hostname: clientOptions.hostname,
           port: portNumber,
           multiplex: false
         });
-        client.on('error', function () {});
 
-        client.subscribe('foo').on('subscribe', function () {
-          setTimeout(function () {
+        for await (let packet of client.subscribe('foo').listener('subscribe')) {
+          (async () => {
+            await wait(200);
             client.disconnect();
-          }, 200);
-        });
+          })();
+        }
+      })();
+
+      let socket = await server.listener('connection').once();
+
+      (async () => {
+        for await (let packet of socket.listener('unsubscribe')) {
+          eventList.push({
+            type: 'unsubscribe',
+            channel: packet.channel
+          });
+        }
+      })();
+
+      let packet = await socket.listener('disconnect').once();
+
+      eventList.push({
+        type: 'disconnect',
+        code: packet.code,
+        reason: packet.data
       });
+
+      await wait(0);
+      assert.equal(eventList[0].type, 'disconnect');
+      assert.equal(eventList[1].type, 'unsubscribe');
+      assert.equal(eventList[1].channel, 'foo');
     });
 
-    it('Socket should emit an error when trying to unsubscribe to a channel which it is not subscribed to', function (done) {
+    it('Socket should emit an error when trying to unsubscribe to a channel which it is not subscribed to', async function () {
       portNumber++;
 
       server = socketClusterServer.listen(portNumber, {
@@ -1593,30 +1620,39 @@ describe('Integration tests', function () {
 
       var errorList = [];
 
-      server.on('connection', function (socket) {
-        socket.on('error', function (err) {
-          errorList.push(err);
-        });
+      (async () => {
+        for await (let socket of server.listener('connection')) {
+          (async () => {
+            for await (let err of socket.listener('error')) {
+              errorList.push(err);
+            }
+          })();
+        }
+      })();
+
+      await server.listener('ready').once();
+
+      client = socketCluster.create({
+        hostname: clientOptions.hostname,
+        port: portNumber,
+        multiplex: false
       });
 
-      server.on('ready', function () {
-        client = socketCluster.create({
-          hostname: clientOptions.hostname,
-          port: portNumber,
-          multiplex: false
-        });
+      let error;
+      try {
+        await client.invoke('#unsubscribe', 'bar');
+      } catch (err) {
+        error = err;
+      }
+      assert.notEqual(error, null);
+      assert.equal(error.name, 'BrokerError');
 
-        client.transmit('#unsubscribe', 'bar');
-
-        setTimeout(function () {
-          assert.equal(errorList.length, 1);
-          assert.equal(errorList[0].name, 'BrokerError');
-          done();
-        }, 100);
-      });
+      await wait(100);
+      assert.equal(errorList.length, 1);
+      assert.equal(errorList[0].name, 'BrokerError');
     });
 
-    it('Socket should not receive messages from a channel which it has only just unsubscribed from (accounting for delayed unsubscribe by brokerEngine)', function (done) {
+    it('Socket should not receive messages from a channel which it has only just unsubscribed from (accounting for delayed unsubscribe by brokerEngine)', async function () {
       portNumber++;
       var customBrokerEngine = new SCSimpleBroker();
       var defaultUnsubscribeSocket = customBrokerEngine.unsubscribeSocket;
@@ -1630,45 +1666,51 @@ describe('Integration tests', function () {
         brokerEngine: customBrokerEngine
       });
 
-      server.on('connection', function (socket) {
-        socket.on('unsubscribe', function (channelName) {
-          if (channelName === 'foo') {
-            server.exchange.publish('foo', 'hello');
-          }
-        });
+      (async () => {
+        for await (let socket of server.listener('connection')) {
+          (async () => {
+            for await (let packet of socket.listener('unsubscribe')) {
+              if (packet.channel === 'foo') {
+                server.exchange.publish('foo', 'hello');
+              }
+            }
+          })();
+        }
+      })();
+
+      await server.listener('ready').once();
+
+      client = socketCluster.create({
+        hostname: clientOptions.hostname,
+        port: portNumber,
+        multiplex: false
       });
+      // Stub the isSubscribed method so that it always returns true.
+      // That way the client will always invoke watchers whenever
+      // it receives a #publish event.
+      client.isSubscribed = function () { return true; };
 
-      server.on('ready', function () {
-        client = socketCluster.create({
-          hostname: clientOptions.hostname,
-          port: portNumber,
-          multiplex: false
-        });
-        // Stub the isSubscribed method so that it always returns true.
-        // That way the client will always invoke watchers whenever
-        // it receives a #publish event.
-        client.isSubscribed = function () { return true; };
+      var messageList = [];
 
-        var messageList = [];
+      var fooChannel = client.subscribe('foo');
 
-        var fooChannel = client.subscribe('foo');
-
-        client.watch('foo', function (data) {
+      (async () => {
+        for await (let data of fooChannel) {
           messageList.push(data);
-        });
+        }
+      })();
 
-        fooChannel.on('subscribe', function () {
-          client.transmit('#unsubscribe', 'foo');
-        });
+      (async () => {
+        for await (let packet of fooChannel.listener('subscribe')) {
+          client.invoke('#unsubscribe', 'foo');
+        }
+      })();
 
-        setTimeout(function () {
-          assert.equal(messageList.length, 0);
-          done();
-        }, 200);
-      });
+      await wait(200);
+      assert.equal(messageList.length, 0);
     });
 
-    it('Socket channelSubscriptions and channelSubscriptionsCount should update when socket.kickOut(channel) is called', function (done) {
+    it('Socket channelSubscriptions and channelSubscriptionsCount should update when socket.kickOut(channel) is called', async function () {
       portNumber++;
 
       server = socketClusterServer.listen(portNumber, {
@@ -1680,41 +1722,46 @@ describe('Integration tests', function () {
       var serverSocket;
       var wasKickOutCalled = false;
 
-      server.on('connection', function (socket) {
-        serverSocket = socket;
-        socket.on('error', function (err) {
-          errorList.push(err);
-        });
-        socket.on('subscribe', function (channelName) {
-          if (channelName === 'foo') {
-            setTimeout(function () {
-              wasKickOutCalled = true;
-              socket.kickOut('foo', 'Socket was kicked out of the channel');
-            }, 50);
-          }
-        });
+      (async () => {
+        for await (let socket of server.listener('connection')) {
+          serverSocket = socket;
+
+          (async () => {
+            for await (let err of socket.listener('error')) {
+              errorList.push(err);
+            }
+          })();
+
+          (async () => {
+            for await (let packet of socket.listener('subscribe')) {
+              if (packet.channel === 'foo') {
+                await wait(50);
+                wasKickOutCalled = true;
+                socket.kickOut('foo', 'Socket was kicked out of the channel');
+              }
+            }
+          })();
+        }
+      })();
+
+      await server.listener('ready').once();
+
+      client = socketCluster.create({
+        hostname: clientOptions.hostname,
+        port: portNumber,
+        multiplex: false
       });
 
-      server.on('ready', function () {
-        client = socketCluster.create({
-          hostname: clientOptions.hostname,
-          port: portNumber,
-          multiplex: false
-        });
+      client.subscribe('foo');
 
-        client.subscribe('foo');
-
-        setTimeout(function () {
-          assert.equal(errorList.length, 0);
-          assert.equal(wasKickOutCalled, true);
-          assert.equal(serverSocket.channelSubscriptionsCount, 0);
-          assert.equal(Object.keys(serverSocket.channelSubscriptions).length, 0);
-          done();
-        }, 100);
-      });
+      await wait(100);
+      assert.equal(errorList.length, 0);
+      assert.equal(wasKickOutCalled, true);
+      assert.equal(serverSocket.channelSubscriptionsCount, 0);
+      assert.equal(Object.keys(serverSocket.channelSubscriptions).length, 0);
     });
 
-    it('Socket channelSubscriptions and channelSubscriptionsCount should update when socket.kickOut() is called without arguments', function (done) {
+    it('Socket channelSubscriptions and channelSubscriptionsCount should update when socket.kickOut() is called without arguments', async function () {
       portNumber++;
 
       server = socketClusterServer.listen(portNumber, {
@@ -1726,39 +1773,44 @@ describe('Integration tests', function () {
       var serverSocket;
       var wasKickOutCalled = false;
 
-      server.on('connection', function (socket) {
-        serverSocket = socket;
-        socket.on('error', function (err) {
-          errorList.push(err);
-        });
-        socket.on('subscribe', function (channelName) {
-          if (socket.channelSubscriptionsCount === 2) {
-            setTimeout(function () {
-              wasKickOutCalled = true;
-              socket.kickOut();
-            }, 50);
-          }
-        });
+      (async () => {
+        for await (let socket of server.listener('connection')) {
+          serverSocket = socket;
+
+          (async () => {
+            for await (let err of socket.listener('error')) {
+              errorList.push(err);
+            }
+          })();
+
+          (async () => {
+            for await (let packet of socket.listener('subscribe')) {
+              if (socket.channelSubscriptionsCount === 2) {
+                await wait(50);
+                wasKickOutCalled = true;
+                socket.kickOut();
+              }
+            }
+          })();
+        }
+      })();
+
+      await server.listener('ready').once();
+
+      client = socketCluster.create({
+        hostname: clientOptions.hostname,
+        port: portNumber,
+        multiplex: false
       });
 
-      server.on('ready', function () {
-        client = socketCluster.create({
-          hostname: clientOptions.hostname,
-          port: portNumber,
-          multiplex: false
-        });
+      client.subscribe('foo');
+      client.subscribe('bar');
 
-        client.subscribe('foo');
-        client.subscribe('bar');
-
-        setTimeout(function () {
-          assert.equal(errorList.length, 0);
-          assert.equal(wasKickOutCalled, true);
-          assert.equal(serverSocket.channelSubscriptionsCount, 0);
-          assert.equal(Object.keys(serverSocket.channelSubscriptions).length, 0);
-          done();
-        }, 200);
-      });
+      await wait(200);
+      assert.equal(errorList.length, 0);
+      assert.equal(wasKickOutCalled, true);
+      assert.equal(serverSocket.channelSubscriptionsCount, 0);
+      assert.equal(Object.keys(serverSocket.channelSubscriptions).length, 0);
     });
   });
 

@@ -555,8 +555,6 @@ SCServer.prototype._handleSocketConnection = function (wsSocket, upgradeReq) {
       this.pendingClientsCount--;
     }
 
-    this._unsubscribeSocketFromAllChannels(scSocket);
-
     if (type === 'disconnect') {
       this.emit('disconnection', {
         socket: scSocket,
@@ -575,6 +573,8 @@ SCServer.prototype._handleSocketConnection = function (wsSocket, upgradeReq) {
       code,
       data
     });
+
+    this._unsubscribeSocketFromAllChannels(scSocket);
   };
 
   let handleSocketDisconnect = async () => {
