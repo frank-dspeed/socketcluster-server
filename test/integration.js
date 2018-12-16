@@ -178,8 +178,8 @@ describe('Integration tests', function () {
   describe('Socket authentication', function () {
     it('Should not send back error if JWT is not provided in handshake', async function () {
       client = socketCluster.create(clientOptions);
-      let packet = await client.listener('connect').once();
-      assert.equal(packet.authError === undefined, true);
+      let event = await client.listener('connect').once();
+      assert.equal(event.authError === undefined, true);
     });
 
     it('Should be authenticated on connect if previous JWT token is present', async function () {
@@ -190,9 +190,9 @@ describe('Integration tests', function () {
       assert.equal(client.authState, 'authenticated');
       client.disconnect();
       client.connect();
-      let packet = await client.listener('connect').once();
-      assert.equal(packet.isAuthenticated, true);
-      assert.equal(packet.authError === undefined, true);
+      let event = await client.listener('connect').once();
+      assert.equal(event.isAuthenticated, true);
+      assert.equal(event.authError === undefined, true);
     });
 
     it('Should send back error if JWT is invalid during handshake', async function () {
@@ -205,10 +205,10 @@ describe('Integration tests', function () {
       await client.invoke('setAuthKey', 'differentAuthKey');
       client.disconnect();
       client.connect();
-      let packet = await client.listener('connect').once();
-      assert.equal(packet.isAuthenticated, false);
-      assert.notEqual(packet.authError, null);
-      assert.equal(packet.authError.name, 'AuthTokenInvalidError');
+      let event = await client.listener('connect').once();
+      assert.equal(event.isAuthenticated, false);
+      assert.notEqual(event.authError, null);
+      assert.equal(event.authError.name, 'AuthTokenInvalidError');
     });
 
     it('Should allow switching between users', async function () {
@@ -288,7 +288,7 @@ describe('Integration tests', function () {
       client = socketCluster.create(clientOptions);
 
       (async () => {
-        for await (let packet of client.listener('connect')) {
+        for await (let event of client.listener('connect')) {
           client.deauthenticate();
         }
       })();
@@ -333,12 +333,12 @@ describe('Integration tests', function () {
       // The previous test authenticated us as 'alice', so that token will be passed to the server as
       // part of the handshake.
 
-      let packet = await client.listener('connect').once();
+      let event = await client.listener('connect').once();
       // Any token containing the username 'alice' should be blocked by the MIDDLEWARE_AUTHENTICATE middleware.
       // This will only affects token-based authentication, not the credentials-based login event.
-      assert.equal(packet.isAuthenticated, false);
-      assert.notEqual(packet.authError, null);
-      assert.equal(packet.authError.name, 'AuthenticateMiddlewareError');
+      assert.equal(event.isAuthenticated, false);
+      assert.notEqual(event.authError, null);
+      assert.equal(event.authError.name, 'AuthenticateMiddlewareError');
     });
 
     it('Token should be available after Promise resolves if token engine signing is synchronous', async function () {
@@ -436,9 +436,9 @@ describe('Integration tests', function () {
       client.disconnect();
       client.connect();
 
-      let packet = await client.listener('connect').once();
+      let event = await client.listener('connect').once();
 
-      assert.equal(packet.isAuthenticated, true);
+      assert.equal(event.isAuthenticated, true);
       assert.notEqual(client.authToken, null);
       assert.equal(client.authToken.username, 'bob');
     });
@@ -592,8 +592,8 @@ describe('Integration tests', function () {
       let closePackets = [];
 
       (async () => {
-        let packet = await client.listener('close').once();
-        closePackets.push(packet);
+        let event = await client.listener('close').once();
+        closePackets.push(event);
       })();
 
       let error;
@@ -930,9 +930,9 @@ describe('Integration tests', function () {
       let clientConnectStatus = false;
 
       (async () => {
-        for await (let packet of client.listener('connect')) {
+        for await (let event of client.listener('connect')) {
           clientConnectEmitted = true;
-          clientConnectStatus = packet;
+          clientConnectStatus = event;
         }
       })();
 
@@ -1014,10 +1014,10 @@ describe('Integration tests', function () {
         })();
 
         (async () => {
-          let packet = await socket.listener('connectAbort').once();
+          let event = await socket.listener('connectAbort').once();
           clientSocketAborted = true;
-          assert.equal(packet.code, 4444);
-          assert.equal(packet.reason, 'Disconnect before handshake');
+          assert.equal(event.code, 4444);
+          assert.equal(event.reason, 'Disconnect before handshake');
         })();
       })();
 
@@ -1084,17 +1084,17 @@ describe('Integration tests', function () {
         assert.notEqual(server.pendingClients[socket.id], null);
 
         (async () => {
-          let packet = await socket.listener('disconnect').once();
+          let event = await socket.listener('disconnect').once();
           if (!connectionOnServer) {
             socketDisconnectedBeforeConnect = true;
           }
           socketDisconnected = true;
-          assert.equal(packet.code, 4445);
-          assert.equal(packet.reason, 'Disconnect after handshake');
+          assert.equal(event.code, 4445);
+          assert.equal(event.reason, 'Disconnect after handshake');
         })();
 
         (async () => {
-          let packet = await socket.listener('connectAbort').once();
+          let event = await socket.listener('connectAbort').once();
           clientSocketAborted = true;
         })();
       })();
@@ -1157,22 +1157,22 @@ describe('Integration tests', function () {
 
       (async () => {
         for await (let {socket} of server.listener('handshake')) {
-          let packet = await socket.listener('close').once();
+          let event = await socket.listener('close').once();
           serverSocketClosed = true;
-          assert.equal(packet.code, 4444);
-          assert.equal(packet.reason, 'Disconnect before handshake');
+          assert.equal(event.code, 4444);
+          assert.equal(event.reason, 'Disconnect before handshake');
         }
       })();
 
       (async () => {
-        for await (let packet of server.listener('connectionAbort')) {
+        for await (let event of server.listener('connectionAbort')) {
           serverSocketAborted = true;
         }
       })();
 
       (async () => {
-        for await (let packet of server.listener('closure')) {
-          assert.equal(packet.socket.state, packet.socket.CLOSED);
+        for await (let event of server.listener('closure')) {
+          assert.equal(event.socket.state, event.socket.CLOSED);
           serverClosure = true;
         }
       })();
@@ -1219,22 +1219,22 @@ describe('Integration tests', function () {
 
       (async () => {
         for await (let {socket} of server.listener('handshake')) {
-          let packet = await socket.listener('close').once();
+          let event = await socket.listener('close').once();
           serverSocketClosed = true;
-          assert.equal(packet.code, 4445);
-          assert.equal(packet.reason, 'Disconnect after handshake');
+          assert.equal(event.code, 4445);
+          assert.equal(event.reason, 'Disconnect after handshake');
         }
       })();
 
       (async () => {
-        for await (let packet of server.listener('disconnection')) {
+        for await (let event of server.listener('disconnection')) {
           serverSocketDisconnected = true;
         }
       })();
 
       (async () => {
-        for await (let packet of server.listener('closure')) {
-          assert.equal(packet.socket.state, packet.socket.CLOSED);
+        for await (let event of server.listener('closure')) {
+          assert.equal(event.socket.state, event.socket.CLOSED);
           serverClosure = true;
         }
       })();
@@ -1316,20 +1316,20 @@ describe('Integration tests', function () {
       }
 
       (async () => {
-        for await (let packet of channelList[12].listener('subscribe')) {
+        for await (let event of channelList[12].listener('subscribe')) {
           throw new Error('The my-channel-12 channel should have been blocked by MIDDLEWARE_SUBSCRIBE');
         }
       })();
 
       (async () => {
-        for await (let packet of channelList[12].listener('subscribeFail')) {
-          assert.notEqual(packet.error, null);
-          assert.equal(packet.error.name, 'UnauthorizedSubscribeError');
+        for await (let event of channelList[12].listener('subscribeFail')) {
+          assert.notEqual(event.error, null);
+          assert.equal(event.error.name, 'UnauthorizedSubscribeError');
         }
       })();
 
       (async () => {
-        for await (let packet of channelList[0].listener('subscribe')) {
+        for await (let event of channelList[0].listener('subscribe')) {
           client.publish('my-channel-19', 'Hello!');
         }
       })();
@@ -1372,7 +1372,7 @@ describe('Integration tests', function () {
       let error;
 
       (async () => {
-        for await (let packet of server.listener('subscription')) {
+        for await (let event of server.listener('subscription')) {
           isSubscribed = true;
         }
       })();
@@ -1397,7 +1397,7 @@ describe('Integration tests', function () {
       assert.equal(error.name, 'InvalidActionError');
     });
 
-    it('Server should be able to handle invalid #subscribe and #unsubscribe and #publish packets without crashing', async function () {
+    it('Server should be able to handle invalid #subscribe and #unsubscribe and #publish events without crashing', async function () {
       portNumber++;
       server = socketClusterServer.listen(portNumber, {
         authKey: serverOptions.authKey,
@@ -1479,7 +1479,7 @@ describe('Integration tests', function () {
       };
 
       (async () => {
-        for await (let packet of client.listener('connect')) {
+        for await (let event of client.listener('connect')) {
           // Trick the server by sending a fake subscribe before the handshake is done.
           client.send('{"event":"#subscribe","data":[null],"cid":2}');
           client.send('{"event":"#subscribe","data":{"channel":{"hello":123}},"cid":3}');
@@ -1528,10 +1528,10 @@ describe('Integration tests', function () {
       let {socket} = await server.listener('connection').once();
 
       (async () => {
-        for await (let packet of socket.listener('unsubscribe')) {
+        for await (let event of socket.listener('unsubscribe')) {
           eventList.push({
             type: 'unsubscribe',
-            channel: packet.channel
+            channel: event.channel
           });
         }
       })();
@@ -1573,7 +1573,7 @@ describe('Integration tests', function () {
           multiplex: false
         });
 
-        for await (let packet of client.subscribe('foo').listener('subscribe')) {
+        for await (let event of client.subscribe('foo').listener('subscribe')) {
           (async () => {
             await wait(200);
             client.disconnect();
@@ -1584,20 +1584,20 @@ describe('Integration tests', function () {
       let {socket} = await server.listener('connection').once();
 
       (async () => {
-        for await (let packet of socket.listener('unsubscribe')) {
+        for await (let event of socket.listener('unsubscribe')) {
           eventList.push({
             type: 'unsubscribe',
-            channel: packet.channel
+            channel: event.channel
           });
         }
       })();
 
-      let packet = await socket.listener('disconnect').once();
+      let event = await socket.listener('disconnect').once();
 
       eventList.push({
         type: 'disconnect',
-        code: packet.code,
-        reason: packet.reason
+        code: event.code,
+        reason: event.reason
       });
 
       await wait(0);
@@ -1665,8 +1665,8 @@ describe('Integration tests', function () {
       (async () => {
         for await (let {socket} of server.listener('connection')) {
           (async () => {
-            for await (let packet of socket.listener('unsubscribe')) {
-              if (packet.channel === 'foo') {
+            for await (let event of socket.listener('unsubscribe')) {
+              if (event.channel === 'foo') {
                 server.exchange.publish('foo', 'hello');
               }
             }
@@ -1697,7 +1697,7 @@ describe('Integration tests', function () {
       })();
 
       (async () => {
-        for await (let packet of fooChannel.listener('subscribe')) {
+        for await (let event of fooChannel.listener('subscribe')) {
           client.invoke('#unsubscribe', 'foo');
         }
       })();
@@ -1729,8 +1729,8 @@ describe('Integration tests', function () {
           })();
 
           (async () => {
-            for await (let packet of socket.listener('subscribe')) {
-              if (packet.channel === 'foo') {
+            for await (let event of socket.listener('subscribe')) {
+              if (event.channel === 'foo') {
                 await wait(50);
                 wasKickOutCalled = true;
                 socket.kickOut('foo', 'Socket was kicked out of the channel');
@@ -1780,7 +1780,7 @@ describe('Integration tests', function () {
           })();
 
           (async () => {
-            for await (let packet of socket.listener('subscribe')) {
+            for await (let event of socket.listener('subscribe')) {
               if (socket.channelSubscriptionsCount === 2) {
                 await wait(50);
                 wasKickOutCalled = true;
@@ -1907,8 +1907,8 @@ describe('Integration tests', function () {
 
         let serverDisconnectionCode = null;
         (async () => {
-          for await (let packet of server.listener('disconnection')) {
-            serverDisconnectionCode = packet.code;
+          for await (let event of server.listener('disconnection')) {
+            serverDisconnectionCode = event.code;
           }
         })();
 
@@ -1921,8 +1921,8 @@ describe('Integration tests', function () {
 
         let clientDisconnectCode = null;
         (async () => {
-          for await (let packet of client.listener('disconnect')) {
-            clientDisconnectCode = packet.code;
+          for await (let event of client.listener('disconnect')) {
+            clientDisconnectCode = event.code;
           }
         })();
 
@@ -1975,8 +1975,8 @@ describe('Integration tests', function () {
 
         let serverDisconnectionCode = null;
         (async () => {
-          for await (let packet of server.listener('disconnection')) {
-            serverDisconnectionCode = packet.code;
+          for await (let event of server.listener('disconnection')) {
+            serverDisconnectionCode = event.code;
           }
         })();
 
@@ -1989,8 +1989,8 @@ describe('Integration tests', function () {
 
         let clientDisconnectCode = null;
         (async () => {
-          for await (let packet of client.listener('disconnect')) {
-            clientDisconnectCode = packet.code;
+          for await (let event of client.listener('disconnect')) {
+            clientDisconnectCode = event.code;
           }
         })();
 
@@ -2099,8 +2099,8 @@ describe('Integration tests', function () {
         })();
 
         (async () => {
-          let packet = await client.listener('connectAbort').once();
-          abortStatus = packet.code;
+          let event = await client.listener('connectAbort').once();
+          abortStatus = event.code;
         })();
 
         await wait(200);
@@ -2135,9 +2135,9 @@ describe('Integration tests', function () {
         });
 
         (async () => {
-          let packet = await client.listener('connectAbort').once();
-          abortStatus = packet.code;
-          abortReason = packet.reason;
+          let event = await client.listener('connectAbort').once();
+          abortStatus = event.code;
+          abortReason = event.reason;
         })();
 
         await wait(200);
@@ -2171,9 +2171,9 @@ describe('Integration tests', function () {
         });
 
         (async () => {
-          let packet = await client.listener('connectAbort').once();
-          abortStatus = packet.code;
-          abortReason = packet.reason;
+          let event = await client.listener('connectAbort').once();
+          abortStatus = event.code;
+          abortReason = event.reason;
         })();
 
         await wait(200);
@@ -2201,9 +2201,9 @@ describe('Integration tests', function () {
         });
 
         (async () => {
-          let packet = await client.listener('connectAbort').once();
-          abortStatus = packet.code;
-          abortReason = packet.reason;
+          let event = await client.listener('connectAbort').once();
+          abortStatus = event.code;
+          abortReason = event.reason;
         })();
 
         await client.listener('connect').once();
