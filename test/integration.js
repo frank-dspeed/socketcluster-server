@@ -4,7 +4,6 @@ const socketCluster = require('socketcluster-client');
 const localStorage = require('localStorage');
 const SCSimpleBroker = require('sc-simple-broker').SCSimpleBroker;
 
-// TODO 2: Use const and let instead of let everywhere; in source code as well as tests.
 // Add to the global scope like in browser.
 global.localStorage = localStorage;
 
