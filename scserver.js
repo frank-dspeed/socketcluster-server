@@ -1,29 +1,29 @@
-var SCServerSocket = require('./scserversocket');
-var AuthEngine = require('sc-auth').AuthEngine;
-var formatter = require('sc-formatter');
-var base64id = require('base64id');
-var async = require('async');
-var url = require('url');
-var crypto = require('crypto');
-var uuid = require('uuid');
-var SCSimpleBroker = require('sc-simple-broker').SCSimpleBroker;
-var StreamDemux = require('stream-demux');
+const SCServerSocket = require('./scserversocket');
+const AuthEngine = require('sc-auth').AuthEngine;
+const formatter = require('sc-formatter');
+const base64id = require('base64id');
+const async = require('async');
+const url = require('url');
+const crypto = require('crypto');
+const uuid = require('uuid');
+const SCSimpleBroker = require('sc-simple-broker').SCSimpleBroker;
+const StreamDemux = require('stream-demux');
 
-var scErrors = require('sc-errors');
-var AuthTokenExpiredError = scErrors.AuthTokenExpiredError;
-var AuthTokenInvalidError = scErrors.AuthTokenInvalidError;
-var AuthTokenNotBeforeError = scErrors.AuthTokenNotBeforeError;
-var AuthTokenError = scErrors.AuthTokenError;
-var SilentMiddlewareBlockedError = scErrors.SilentMiddlewareBlockedError;
-var InvalidArgumentsError = scErrors.InvalidArgumentsError;
-var InvalidOptionsError = scErrors.InvalidOptionsError;
-var InvalidActionError = scErrors.InvalidActionError;
-var BrokerError = scErrors.BrokerError;
-var ServerProtocolError = scErrors.ServerProtocolError;
+const scErrors = require('sc-errors');
+const AuthTokenExpiredError = scErrors.AuthTokenExpiredError;
+const AuthTokenInvalidError = scErrors.AuthTokenInvalidError;
+const AuthTokenNotBeforeError = scErrors.AuthTokenNotBeforeError;
+const AuthTokenError = scErrors.AuthTokenError;
+const SilentMiddlewareBlockedError = scErrors.SilentMiddlewareBlockedError;
+const InvalidArgumentsError = scErrors.InvalidArgumentsError;
+const InvalidOptionsError = scErrors.InvalidOptionsError;
+const InvalidActionError = scErrors.InvalidActionError;
+const BrokerError = scErrors.BrokerError;
+const ServerProtocolError = scErrors.ServerProtocolError;
 
 
-var SCServer = function (options) {
-  var opts = {
+let SCServer = function (options) {
+  let opts = {
     brokerEngine: new SCSimpleBroker(),
     wsEngine: 'ws',
     wsEngineServerOptions: {},
@@ -96,12 +96,12 @@ var SCServer = function (options) {
     this.emit('ready');
   });
 
-  var wsEngine = typeof opts.wsEngine === 'string' ? require(opts.wsEngine) : opts.wsEngine;
+  let wsEngine = typeof opts.wsEngine === 'string' ? require(opts.wsEngine) : opts.wsEngine;
   if (!wsEngine || !wsEngine.Server) {
     throw new InvalidOptionsError('The wsEngine option must be a path or module name which points ' +
       'to a valid WebSocket engine module with a compatible interface');
   }
-  var WSServer = wsEngine.Server;
+  let WSServer = wsEngine.Server;
 
   if (opts.authPrivateKey != null || opts.authPublicKey != null) {
     if (opts.authPrivateKey == null) {
@@ -161,7 +161,7 @@ var SCServer = function (options) {
 
   this.exchange = this.brokerEngine.exchange();
 
-  var wsServerOptions = opts.wsEngineServerOptions || {};
+  let wsServerOptions = opts.wsEngineServerOptions || {};
   wsServerOptions.server = this.httpServer;
   wsServerOptions.verifyClient = this.verifyHandshake.bind(this);
 
@@ -207,17 +207,25 @@ SCServer.prototype.setCodecEngine = function (codecEngine) {
   this.codec = codecEngine;
 };
 
+SCServer.prototype.emitError = function (error) {
+  this.emit('error', {error});
+};
+
+SCServer.prototype.emitWarning = function (warning) {
+  this.emit('warning', {warning});
+};
+
 SCServer.prototype._handleServerError = function (error) {
   if (typeof error === 'string') {
     error = new ServerProtocolError(error);
   }
-  this.emit('error', error);
+  this.emitError(error);
 };
 
 SCServer.prototype._handleSocketErrors = async function (socket) {
   // A socket error will show up as a warning on the server.
-  for await (let error of socket.listener('error')) {
-    this.emit('warning', error);
+  for await (let event of socket.listener('error')) {
+    this.emitWarning(event.error);
   }
 };
 
@@ -237,7 +245,7 @@ SCServer.prototype._subscribeSocket = function (socket, channelOptions, callback
     return;
   }
 
-  var channelName = channelOptions.channel;
+  let channelName = channelOptions.channel;
 
   if (typeof channelName !== 'string') {
     callback && callback('Socket ' + socket.id + ' provided an invalid channel name');
@@ -303,8 +311,8 @@ SCServer.prototype._unsubscribeSocket = function (socket, channel) {
 };
 
 SCServer.prototype._processTokenError = function (err) {
-  var authError = null;
-  var isBadToken = true;
+  let authError = null;
+  let isBadToken = true;
 
   if (err) {
     if (err.name === 'TokenExpiredError') {
@@ -327,7 +335,7 @@ SCServer.prototype._processTokenError = function (err) {
 };
 
 SCServer.prototype._emitBadAuthTokenError = function (scSocket, error, signedAuthToken) {
-  var badAuthStatus = {
+  let badAuthStatus = {
     authError: error,
     signedAuthToken: signedAuthToken
   };
@@ -343,13 +351,13 @@ SCServer.prototype._emitBadAuthTokenError = function (scSocket, error, signedAut
 };
 
 SCServer.prototype._processAuthToken = function (scSocket, signedAuthToken, callback) {
-  var verificationOptions = Object.assign({socket: scSocket}, this.defaultVerificationOptions);
+  let verificationOptions = Object.assign({socket: scSocket}, this.defaultVerificationOptions);
 
-  var handleVerifyTokenResult = (result) => {
-    var err = result.error;
-    var token = result.token;
+  let handleVerifyTokenResult = (result) => {
+    let err = result.error;
+    let token = result.token;
 
-    var oldState = scSocket.authState;
+    let oldState = scSocket.authState;
     if (token) {
       scSocket.signedAuthToken = signedAuthToken;
       scSocket.authToken = token;
@@ -382,12 +390,12 @@ SCServer.prototype._processAuthToken = function (scSocket, signedAuthToken, call
         callback(middlewareError, isBadToken || false, oldState);
       });
     } else {
-      var errorData = this._processTokenError(err);
+      let errorData = this._processTokenError(err);
 
       // If the error is related to the JWT being badly formatted, then we will
       // treat the error as a socket error.
       if (err && signedAuthToken != null) {
-        scSocket.emit('error', errorData.authError);
+        scSocket.emitError(errorData.authError);
         if (errorData.isBadToken) {
           this._emitBadAuthTokenError(scSocket, errorData.authError, signedAuthToken);
         }
@@ -396,8 +404,8 @@ SCServer.prototype._processAuthToken = function (scSocket, signedAuthToken, call
     }
   };
 
-  var verifyTokenResult;
-  var verifyTokenError;
+  let verifyTokenResult;
+  let verifyTokenError;
 
   try {
     verifyTokenResult = this.auth.verifyToken(signedAuthToken, this.verificationKey, verificationOptions);
@@ -416,7 +424,7 @@ SCServer.prototype._processAuthToken = function (scSocket, signedAuthToken, call
       handleVerifyTokenResult(result);
     })();
   } else {
-    var result = {
+    let result = {
       token: verifyTokenResult,
       error: verifyTokenError
     };
@@ -431,9 +439,9 @@ SCServer.prototype._handleSocketConnection = function (wsSocket, upgradeReq) {
     wsSocket.upgradeReq = upgradeReq;
   }
 
-  var id = this.generateId();
+  let id = this.generateId();
 
-  var scSocket = new SCServerSocket(id, this, wsSocket);
+  let scSocket = new SCServerSocket(id, this, wsSocket);
   scSocket.exchange = this.exchange;
 
   this._handleSocketErrors(scSocket);
@@ -456,7 +464,7 @@ SCServer.prototype._handleSocketConnection = function (wsSocket, upgradeReq) {
         if (err && isBadToken) {
           rpc.error(err);
         } else {
-          var authStatus = {
+          let authStatus = {
             isAuthenticated: !!scSocket.authToken,
             authError: scErrors.dehydrateError(err)
           };
@@ -489,9 +497,9 @@ SCServer.prototype._handleSocketConnection = function (wsSocket, upgradeReq) {
       if (scSocket.state === scSocket.OPEN) {
         this._subscribeSocket(scSocket, channelOptions, (err) => {
           if (err) {
-            var error = new BrokerError('Failed to subscribe socket to the ' + channelOptions.channel + ' channel - ' + err);
+            let error = new BrokerError('Failed to subscribe socket to the ' + channelOptions.channel + ' channel - ' + err);
             rpc.error(error);
-            scSocket.emit('error', error);
+            scSocket.emitError(error);
           } else {
             if (channelOptions.batch) {
               rpc.end(undefined, {batch: true});
@@ -503,9 +511,9 @@ SCServer.prototype._handleSocketConnection = function (wsSocket, upgradeReq) {
       } else {
         // This is an invalid state; it means the client tried to subscribe before
         // having completed the handshake.
-        var error = new InvalidActionError('Cannot subscribe socket to a channel before it has completed the handshake');
+        let error = new InvalidActionError('Cannot subscribe socket to a channel before it has completed the handshake');
         rpc.error(error);
-        this.emit('warning', error);
+        this.emitWarning(error);
       }
     }
   };
@@ -522,7 +530,7 @@ SCServer.prototype._handleSocketConnection = function (wsSocket, upgradeReq) {
       }
       if (error) {
         rpc.error(error);
-        scSocket.emit('error', error);
+        scSocket.emitError(error);
       } else {
         rpc.end();
       }
@@ -530,7 +538,7 @@ SCServer.prototype._handleSocketConnection = function (wsSocket, upgradeReq) {
   };
   handleSocketUnsubscribe();
 
-  var cleanupSocket = (type, code, data) => {
+  let cleanupSocket = (type, code, data) => {
     clearTimeout(scSocket._handshakeTimeoutRef);
 
     scSocket.closeProcedure('#handshake');
@@ -542,14 +550,14 @@ SCServer.prototype._handleSocketConnection = function (wsSocket, upgradeReq) {
     scSocket.closeListener('authStateChange');
     scSocket.closeListener('deauthenticate');
 
-    var isClientFullyConnected = !!this.clients[id];
+    let isClientFullyConnected = !!this.clients[id];
 
     if (isClientFullyConnected) {
       delete this.clients[id];
       this.clientsCount--;
     }
 
-    var isClientPending = !!this.pendingClients[id];
+    let isClientPending = !!this.pendingClients[id];
     if (isClientPending) {
       delete this.pendingClients[id];
       this.pendingClientsCount--;
@@ -594,7 +602,7 @@ SCServer.prototype._handleSocketConnection = function (wsSocket, upgradeReq) {
   let handleSocketHandshake = async () => {
     for await (let rpc of scSocket.procedure('#handshake')) {
       let data = rpc.data || {};
-      var signedAuthToken = data.authToken || null;
+      let signedAuthToken = data.authToken || null;
       clearTimeout(scSocket._handshakeTimeoutRef);
 
       this._passThroughHandshakeSCMiddleware({
@@ -613,11 +621,11 @@ SCServer.prototype._handleSocketConnection = function (wsSocket, upgradeReq) {
             return;
           }
 
-          var clientSocketStatus = {
+          let clientSocketStatus = {
             id: scSocket.id,
             pingTimeout: this.pingTimeout
           };
-          var serverSocketStatus = {
+          let serverSocketStatus = {
             id: scSocket.id,
             pingTimeout: this.pingTimeout
           };
@@ -700,7 +708,7 @@ SCServer.prototype.addMiddleware = function (type, middleware) {
 };
 
 SCServer.prototype.removeMiddleware = function (type, middleware) {
-  var middlewareFunctions = this._middleware[type];
+  let middlewareFunctions = this._middleware[type];
 
   this._middleware[type] = middlewareFunctions.filter((fn) => {
     return fn !== middleware;
@@ -708,18 +716,18 @@ SCServer.prototype.removeMiddleware = function (type, middleware) {
 };
 
 SCServer.prototype.verifyHandshake = function (info, callback) {
-  var req = info.req;
-  var origin = info.origin;
+  let req = info.req;
+  let origin = info.origin;
   if (origin === 'null' || origin == null) {
     origin = '*';
   }
-  var ok = false;
+  let ok = false;
 
   if (this._allowAllOrigins) {
     ok = true;
   } else {
     try {
-      var parts = url.parse(origin);
+      let parts = url.parse(origin);
       parts.port = parts.port || 80;
       ok = ~this.origins.indexOf(parts.hostname + ':' + parts.port) ||
         ~this.origins.indexOf(parts.hostname + ':*') ||
@@ -728,19 +736,19 @@ SCServer.prototype.verifyHandshake = function (info, callback) {
   }
 
   if (ok) {
-    var handshakeMiddleware = this._middleware[this.MIDDLEWARE_HANDSHAKE_WS];
+    let handshakeMiddleware = this._middleware[this.MIDDLEWARE_HANDSHAKE_WS];
     if (handshakeMiddleware.length) {
-      var callbackInvoked = false;
+      let callbackInvoked = false;
       async.applyEachSeries(handshakeMiddleware, req, (err) => {
         if (callbackInvoked) {
-          this.emit('warning', new InvalidActionError('Callback for ' + this.MIDDLEWARE_HANDSHAKE_WS + ' middleware was already invoked'));
+          this.emitWarning(new InvalidActionError('Callback for ' + this.MIDDLEWARE_HANDSHAKE_WS + ' middleware was already invoked'));
         } else {
           callbackInvoked = true;
           if (err) {
             if (err === true || err.silent) {
               err = new SilentMiddlewareBlockedError('Action was silently blocked by ' + this.MIDDLEWARE_HANDSHAKE_WS + ' middleware', this.MIDDLEWARE_HANDSHAKE_WS);
             } else if (this.middlewareEmitWarnings) {
-              this.emit('warning', err);
+              this.emitWarning(err);
             }
             callback(false, 401, err);
           } else {
@@ -752,8 +760,8 @@ SCServer.prototype.verifyHandshake = function (info, callback) {
       callback(true);
     }
   } else {
-    var err = new ServerProtocolError('Failed to authorize socket handshake - Invalid origin: ' + origin);
-    this.emit('warning', err);
+    let err = new ServerProtocolError('Failed to authorize socket handshake - Invalid origin: ' + origin);
+    this.emitWarning(err);
     callback(false, 403, err);
   }
 };
@@ -763,8 +771,8 @@ SCServer.prototype._isPrivateTransmittedEvent = function (event) {
 };
 
 SCServer.prototype.verifyInboundTransmittedEvent = function (requestOptions, callback) {
-  var socket = requestOptions.socket;
-  var token = socket.getAuthToken();
+  let socket = requestOptions.socket;
+  let token = socket.getAuthToken();
   if (this.isAuthTokenExpired(token)) {
     requestOptions.authTokenExpiredError = new AuthTokenExpiredError('The socket auth token has expired', token.exp);
 
@@ -776,17 +784,17 @@ SCServer.prototype.verifyInboundTransmittedEvent = function (requestOptions, cal
 
 SCServer.prototype.isAuthTokenExpired = function (token) {
   if (token && token.exp != null) {
-    var currentTime = Date.now();
-    var expiryMilliseconds = token.exp * 1000;
+    let currentTime = Date.now();
+    let expiryMilliseconds = token.exp * 1000;
     return currentTime > expiryMilliseconds;
   }
   return false;
 };
 
 SCServer.prototype._passThroughMiddleware = function (options, callback) {
-  var callbackInvoked = false;
+  let callbackInvoked = false;
 
-  var request = {
+  let request = {
     socket: options.socket
   };
 
@@ -794,7 +802,7 @@ SCServer.prototype._passThroughMiddleware = function (options, callback) {
     request.authTokenExpiredError = options.authTokenExpiredError;
   }
 
-  var event = options.event;
+  let event = options.event;
 
   if (options.cid == null) {
     // If transmit.
@@ -807,14 +815,14 @@ SCServer.prototype._passThroughMiddleware = function (options, callback) {
       async.applyEachSeries(this._middleware[this.MIDDLEWARE_TRANSMIT], request,
         (err) => {
           if (callbackInvoked) {
-            this.emit('warning', new InvalidActionError('Callback for ' + this.MIDDLEWARE_TRANSMIT + ' middleware was already invoked'));
+            this.emitWarning(new InvalidActionError('Callback for ' + this.MIDDLEWARE_TRANSMIT + ' middleware was already invoked'));
           } else {
             callbackInvoked = true;
             if (err) {
               if (err === true || err.silent) {
                 err = new SilentMiddlewareBlockedError('Action was silently blocked by ' + this.MIDDLEWARE_TRANSMIT + ' middleware', this.MIDDLEWARE_TRANSMIT);
               } else if (this.middlewareEmitWarnings) {
-                this.emit('warning', err);
+                this.emitWarning(err);
               }
             }
             callback(err, request.data);
@@ -826,7 +834,7 @@ SCServer.prototype._passThroughMiddleware = function (options, callback) {
     // If invoke/RPC.
     if (this._isPrivateTransmittedEvent(event)) {
       if (event === '#subscribe') {
-        var eventData = options.data || {};
+        let eventData = options.data || {};
         request.channel = eventData.channel;
         request.waitForAuth = eventData.waitForAuth;
         request.data = eventData.data;
@@ -839,14 +847,14 @@ SCServer.prototype._passThroughMiddleware = function (options, callback) {
           async.applyEachSeries(this._middleware[this.MIDDLEWARE_SUBSCRIBE], request,
             (err) => {
               if (callbackInvoked) {
-                this.emit('warning', new InvalidActionError('Callback for ' + this.MIDDLEWARE_SUBSCRIBE + ' middleware was already invoked'));
+                this.emitWarning(new InvalidActionError('Callback for ' + this.MIDDLEWARE_SUBSCRIBE + ' middleware was already invoked'));
               } else {
                 callbackInvoked = true;
                 if (err) {
                   if (err === true || err.silent) {
                     err = new SilentMiddlewareBlockedError('Action was silently blocked by ' + this.MIDDLEWARE_SUBSCRIBE + ' middleware', this.MIDDLEWARE_SUBSCRIBE);
                   } else if (this.middlewareEmitWarnings) {
-                    this.emit('warning', err);
+                    this.emitWarning(err);
                   }
                 }
                 if (request.data !== undefined) {
@@ -859,14 +867,14 @@ SCServer.prototype._passThroughMiddleware = function (options, callback) {
         }
       } else if (event === '#publish') {
         if (this.allowClientPublish) {
-          var eventData = options.data || {};
+          let eventData = options.data || {};
           request.channel = eventData.channel;
           request.data = eventData.data;
 
           async.applyEachSeries(this._middleware[this.MIDDLEWARE_PUBLISH_IN], request,
             (err) => {
               if (callbackInvoked) {
-                this.emit('warning', new InvalidActionError('Callback for ' + this.MIDDLEWARE_PUBLISH_IN + ' middleware was already invoked'));
+                this.emitWarning(new InvalidActionError('Callback for ' + this.MIDDLEWARE_PUBLISH_IN + ' middleware was already invoked'));
               } else {
                 callbackInvoked = true;
                 if (request.data !== undefined) {
@@ -876,13 +884,13 @@ SCServer.prototype._passThroughMiddleware = function (options, callback) {
                   if (err === true || err.silent) {
                     err = new SilentMiddlewareBlockedError('Action was silently blocked by ' + this.MIDDLEWARE_PUBLISH_IN + ' middleware', this.MIDDLEWARE_PUBLISH_IN);
                   } else if (this.middlewareEmitWarnings) {
-                    this.emit('warning', err);
+                    this.emitWarning(err);
                   }
                   callback(err, eventData, request.ackData);
                 } else {
                   if (typeof request.channel !== 'string') {
                     err = new BrokerError('Socket ' + request.socket.id + ' tried to publish to an invalid ' + request.channel + ' channel');
-                    this.emit('warning', err);
+                    this.emitWarning(err);
                     callback(err, eventData, request.ackData);
                     return;
                   }
@@ -892,7 +900,7 @@ SCServer.prototype._passThroughMiddleware = function (options, callback) {
                       await this.exchange.publish(request.channel, request.data);
                     } catch (err) {
                       error = err;
-                      this.emit('warning', error);
+                      this.emitWarning(error);
                     }
                     callback(error, eventData, request.ackData);
                   })();
@@ -901,8 +909,8 @@ SCServer.prototype._passThroughMiddleware = function (options, callback) {
             }
           );
         } else {
-          var noPublishError = new InvalidActionError('Client publish feature is disabled');
-          this.emit('warning', noPublishError);
+          let noPublishError = new InvalidActionError('Client publish feature is disabled');
+          this.emitWarning(noPublishError);
           callback(noPublishError, options.data);
         }
       } else {
@@ -916,14 +924,14 @@ SCServer.prototype._passThroughMiddleware = function (options, callback) {
       async.applyEachSeries(this._middleware[this.MIDDLEWARE_INVOKE], request,
         (err) => {
           if (callbackInvoked) {
-            this.emit('warning', new InvalidActionError('Callback for ' + this.MIDDLEWARE_INVOKE + ' middleware was already invoked'));
+            this.emitWarning(new InvalidActionError('Callback for ' + this.MIDDLEWARE_INVOKE + ' middleware was already invoked'));
           } else {
             callbackInvoked = true;
             if (err) {
               if (err === true || err.silent) {
                 err = new SilentMiddlewareBlockedError('Action was silently blocked by ' + this.MIDDLEWARE_INVOKE + ' middleware', this.MIDDLEWARE_INVOKE);
               } else if (this.middlewareEmitWarnings) {
-                this.emit('warning', err);
+                this.emitWarning(err);
               }
             }
             callback(err, request.data);
@@ -935,9 +943,9 @@ SCServer.prototype._passThroughMiddleware = function (options, callback) {
 };
 
 SCServer.prototype._passThroughAuthenticateMiddleware = function (options, callback) {
-  var callbackInvoked = false;
+  let callbackInvoked = false;
 
-  var request = {
+  let request = {
     socket: options.socket,
     authToken: options.authToken
   };
@@ -945,10 +953,10 @@ SCServer.prototype._passThroughAuthenticateMiddleware = function (options, callb
   async.applyEachSeries(this._middleware[this.MIDDLEWARE_AUTHENTICATE], request,
     (err, results) => {
       if (callbackInvoked) {
-        this.emit('warning', new InvalidActionError('Callback for ' + this.MIDDLEWARE_AUTHENTICATE + ' middleware was already invoked'));
+        this.emitWarning(new InvalidActionError('Callback for ' + this.MIDDLEWARE_AUTHENTICATE + ' middleware was already invoked'));
       } else {
         callbackInvoked = true;
-        var isBadToken = false;
+        let isBadToken = false;
         if (results.length) {
           isBadToken = results[results.length - 1] || false;
         }
@@ -956,7 +964,7 @@ SCServer.prototype._passThroughAuthenticateMiddleware = function (options, callb
           if (err === true || err.silent) {
             err = new SilentMiddlewareBlockedError('Action was silently blocked by ' + this.MIDDLEWARE_AUTHENTICATE + ' middleware', this.MIDDLEWARE_AUTHENTICATE);
           } else if (this.middlewareEmitWarnings) {
-            this.emit('warning', err);
+            this.emitWarning(err);
           }
         }
         callback(err, isBadToken);
@@ -966,19 +974,19 @@ SCServer.prototype._passThroughAuthenticateMiddleware = function (options, callb
 };
 
 SCServer.prototype._passThroughHandshakeSCMiddleware = function (options, callback) {
-  var callbackInvoked = false;
+  let callbackInvoked = false;
 
-  var request = {
+  let request = {
     socket: options.socket
   };
 
   async.applyEachSeries(this._middleware[this.MIDDLEWARE_HANDSHAKE_SC], request,
     (err, results) => {
       if (callbackInvoked) {
-        this.emit('warning', new InvalidActionError('Callback for ' + this.MIDDLEWARE_HANDSHAKE_SC + ' middleware was already invoked'));
+        this.emitWarning(new InvalidActionError('Callback for ' + this.MIDDLEWARE_HANDSHAKE_SC + ' middleware was already invoked'));
       } else {
         callbackInvoked = true;
-        var statusCode;
+        let statusCode;
         if (results.length) {
           statusCode = results[results.length - 1] || 4008;
         } else {
@@ -991,7 +999,7 @@ SCServer.prototype._passThroughHandshakeSCMiddleware = function (options, callba
           if (err === true || err.silent) {
             err = new SilentMiddlewareBlockedError('Action was silently blocked by ' + this.MIDDLEWARE_HANDSHAKE_SC + ' middleware', this.MIDDLEWARE_HANDSHAKE_SC);
           } else if (this.middlewareEmitWarnings) {
-            this.emit('warning', err);
+            this.emitWarning(err);
           }
         }
         callback(err, statusCode);
@@ -1001,10 +1009,10 @@ SCServer.prototype._passThroughHandshakeSCMiddleware = function (options, callba
 };
 
 SCServer.prototype.verifyOutboundEvent = function (socket, eventName, eventData, options, callback) {
-  var callbackInvoked = false;
+  let callbackInvoked = false;
 
   if (eventName === '#publish') {
-    var request = {
+    let request = {
       socket: socket,
       channel: eventData.channel,
       data: eventData.data
@@ -1012,7 +1020,7 @@ SCServer.prototype.verifyOutboundEvent = function (socket, eventName, eventData,
     async.applyEachSeries(this._middleware[this.MIDDLEWARE_PUBLISH_OUT], request,
       (err) => {
         if (callbackInvoked) {
-          this.emit('warning', new InvalidActionError('Callback for ' + this.MIDDLEWARE_PUBLISH_OUT + ' middleware was already invoked'));
+          this.emitWarning(new InvalidActionError('Callback for ' + this.MIDDLEWARE_PUBLISH_OUT + ' middleware was already invoked'));
         } else {
           callbackInvoked = true;
           if (request.data !== undefined) {
@@ -1022,7 +1030,7 @@ SCServer.prototype.verifyOutboundEvent = function (socket, eventName, eventData,
             if (err === true || err.silent) {
               err = new SilentMiddlewareBlockedError('Action was silently blocked by ' + this.MIDDLEWARE_PUBLISH_OUT + ' middleware', this.MIDDLEWARE_PUBLISH_OUT);
             } else if (this.middlewareEmitWarnings) {
-              this.emit('warning', err);
+              this.emitWarning(err);
             }
             callback(err, eventData);
           } else {

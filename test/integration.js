@@ -4,6 +4,7 @@ var socketCluster = require('socketcluster-client');
 var localStorage = require('localStorage');
 var SCSimpleBroker = require('sc-simple-broker').SCSimpleBroker;
 
+// TODO 2: Use const and let instead of var everywhere; in source code as well as tests.
 // Add to the global scope like in browser.
 global.localStorage = localStorage;
 
@@ -577,16 +578,16 @@ describe('Integration tests', function () {
       })();
 
       (async () => {
-        for await (let warning of server.listener('warning')) {
+        for await (let {warning} of server.listener('warning')) {
           assert.notEqual(warning, null);
           warningMap[warning.name] = warning;
         }
       })();
 
       (async () => {
-        for await (let err of server.listener('error')) {
-          assert.notEqual(err, null);
-          assert.equal(err.name, 'SocketProtocolError');
+        for await (let {error} of server.listener('error')) {
+          assert.notEqual(error, null);
+          assert.equal(error.name, 'SocketProtocolError');
         }
       })();
 
@@ -690,8 +691,8 @@ describe('Integration tests', function () {
       let socket = await server.listener('connection').once();
 
       (async () => {
-        for await (let err of socket.listener('error')) {
-          socketErrors.push(err);
+        for await (let {error} of socket.listener('error')) {
+          socketErrors.push(error);
         }
       })();
 
@@ -742,8 +743,8 @@ describe('Integration tests', function () {
       let socket = await server.listener('connection').once();
 
       (async () => {
-        for await (let err of socket.listener('error')) {
-          socketErrors.push(err);
+        for await (let {error} of socket.listener('error')) {
+          socketErrors.push(error);
         }
       })();
 
@@ -1619,8 +1620,8 @@ describe('Integration tests', function () {
       (async () => {
         for await (let socket of server.listener('connection')) {
           (async () => {
-            for await (let err of socket.listener('error')) {
-              errorList.push(err);
+            for await (let {error} of socket.listener('error')) {
+              errorList.push(error);
             }
           })();
         }
@@ -1723,8 +1724,8 @@ describe('Integration tests', function () {
           serverSocket = socket;
 
           (async () => {
-            for await (let err of socket.listener('error')) {
-              errorList.push(err);
+            for await (let {error} of socket.listener('error')) {
+              errorList.push(error);
             }
           })();
 
@@ -1774,8 +1775,8 @@ describe('Integration tests', function () {
           serverSocket = socket;
 
           (async () => {
-            for await (let err of socket.listener('error')) {
-              errorList.push(err);
+            for await (let {error} of socket.listener('error')) {
+              errorList.push(error);
             }
           })();
 
@@ -1900,8 +1901,8 @@ describe('Integration tests', function () {
 
         var serverWarning = null;
         (async () => {
-          for await (let err of server.listener('warning')) {
-            serverWarning = err;
+          for await (let {warning} of server.listener('warning')) {
+            serverWarning = warning;
           }
         })();
 
@@ -1914,8 +1915,8 @@ describe('Integration tests', function () {
 
         var clientError = null;
         (async () => {
-          for await (let err of client.listener('error')) {
-            clientError = err;
+          for await (let {error} of client.listener('error')) {
+            clientError = error;
           }
         })();
 
@@ -1968,8 +1969,8 @@ describe('Integration tests', function () {
 
         var serverWarning = null;
         (async () => {
-          for await (let err of server.listener('warning')) {
-            serverWarning = err;
+          for await (let {warning} of server.listener('warning')) {
+            serverWarning = warning;
           }
         })();
 
@@ -1982,8 +1983,8 @@ describe('Integration tests', function () {
 
         var clientError = null;
         (async () => {
-          for await (let err of client.listener('error')) {
-            clientError = err;
+          for await (let {error} of client.listener('error')) {
+            clientError = error;
           }
         })();
 
@@ -2081,8 +2082,8 @@ describe('Integration tests', function () {
         server.addMiddleware(server.MIDDLEWARE_HANDSHAKE_SC, middlewareFunction);
 
         (async () => {
-          for await (let err of server.listener('warning')) {
-            serverWarnings.push(err);
+          for await (let {warning} of server.listener('warning')) {
+            serverWarnings.push(warning);
           }
         })();
 
@@ -2093,8 +2094,8 @@ describe('Integration tests', function () {
         });
 
         (async () => {
-          for await (let err of client.listener('error')) {
-            clientErrors.push(err);
+          for await (let {error} of client.listener('error')) {
+            clientErrors.push(error);
           }
         })();
 
