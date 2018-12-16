@@ -433,7 +433,7 @@ SCServerSocket.prototype.triggerAuthenticationEvents = function (oldState) {
   });
 };
 
-SCServerSocket.prototype.setAuthToken = function (data, options) {
+SCServerSocket.prototype.setAuthToken = async function (data, options) {
   var authToken = cloneDeep(data);
   var oldState = this.authState;
   this.authState = this.AUTHENTICATED;
@@ -483,63 +483,56 @@ SCServerSocket.prototype.setAuthToken = function (data, options) {
 
   this.authToken = authToken;
 
-  var handleSignTokenResult = (result) => {
-    if (result.error) {
-      this.emit('error', result.error);
-      this._onSCClose(4002, result.error.toString());
-      this.socket.close(4002);
-      throw result.error;
-    }
+  let handleAuthTokenSignFail = (error) => {
+    this.emit('error', error);
+    this._onSCClose(4002, error.toString());
+    this.socket.close(4002);
+    throw error;
+  };
+
+  var sendAuthTokenToClient = async (signedToken) => {
     var tokenData = {
-      token: result.signedToken
+      token: signedToken
     };
-    if (this.authToken === authToken) {
-      this.signedAuthToken = result.signedToken;
-      this.emit('authTokenSigned', result.signedToken);
+    try {
+      return await this.invoke('#setAuthToken', tokenData);
+    } catch (err) {
+      throw new AuthError('Failed to deliver auth token to client - ' + err.message);
     }
-    return this.invoke('#setAuthToken', tokenData) // TODO 22: Use async/await instead of promises everywhere
-    .catch((err) => {
-      var authError = new AuthError('Failed to deliver auth token to client - ' + err.message);
-      this.emit('error', authError);
-      if (rejectOnFailedDelivery) {
-        throw authError;
-      }
-    });
   };
 
   var signTokenResult;
-  var signTokenError;
-  var signTokenPromise;
 
   try {
     signTokenResult = this.server.auth.signToken(authToken, this.server.signatureKey, options);
   } catch (err) {
-    signTokenError = err;
+    handleAuthTokenSignFail(err);
   }
 
+  let signedAuthToken;
   if (signTokenResult instanceof Promise) {
-    signTokenPromise = signTokenResult
-    .then((signedToken) => {
-      return {signedToken: signedToken};
-    })
-    .catch((err) => {
-      return {error: err};
-    })
-    .then(handleSignTokenResult);
-  } else {
-    var result = {
-      signedToken: signTokenResult,
-      error: signTokenError
-    };
     try {
-      signTokenPromise = handleSignTokenResult(result);
+      signedAuthToken = await signTokenResult;
     } catch (err) {
-      signTokenPromise = Promise.reject(err);
+      handleAuthTokenSignFail(err);
     }
+  } else {
+    signedAuthToken = signTokenResult;
+  }
+  if (this.authToken === authToken) {
+    this.signedAuthToken = signedAuthToken;
+    this.emit('authTokenSigned', signedAuthToken);
   }
 
   this.triggerAuthenticationEvents(oldState);
-  return signTokenPromise;
+  try {
+    await sendAuthTokenToClient(signedAuthToken);
+  } catch (err) {
+    this.emit('error', err);
+    if (rejectOnFailedDelivery) {
+      throw err;
+    }
+  }
 };
 
 SCServerSocket.prototype.getAuthToken = function () {
