@@ -179,7 +179,7 @@ describe('Integration tests', function () {
     it('Should not send back error if JWT is not provided in handshake', async function () {
       client = socketCluster.create(clientOptions);
       let packet = await client.listener('connect').once();
-      assert.equal(packet.status.authError === undefined, true);
+      assert.equal(packet.authError === undefined, true);
     });
 
     it('Should be authenticated on connect if previous JWT token is present', async function () {
@@ -191,8 +191,8 @@ describe('Integration tests', function () {
       client.disconnect();
       client.connect();
       let packet = await client.listener('connect').once();
-      assert.equal(packet.status.isAuthenticated, true);
-      assert.equal(packet.status.authError === undefined, true);
+      assert.equal(packet.isAuthenticated, true);
+      assert.equal(packet.authError === undefined, true);
     });
 
     it('Should send back error if JWT is invalid during handshake', async function () {
@@ -206,9 +206,9 @@ describe('Integration tests', function () {
       client.disconnect();
       client.connect();
       let packet = await client.listener('connect').once();
-      assert.equal(packet.status.isAuthenticated, false);
-      assert.notEqual(packet.status.authError, null);
-      assert.equal(packet.status.authError.name, 'AuthTokenInvalidError');
+      assert.equal(packet.isAuthenticated, false);
+      assert.notEqual(packet.authError, null);
+      assert.equal(packet.authError.name, 'AuthTokenInvalidError');
     });
 
     it('Should allow switching between users', async function () {
@@ -235,7 +235,7 @@ describe('Integration tests', function () {
             }
           })();
           (async () => {
-            for await (let oldAuthToken of socket.listener('deauthenticate')) {
+            for await (let {oldAuthToken} of socket.listener('deauthenticate')) {
               deauthenticateEvents.push(oldAuthToken);
             }
           })();
@@ -263,14 +263,14 @@ describe('Integration tests', function () {
       assert.equal(authenticationStateChangeEvents.length, 1);
       assert.notEqual(authenticationStateChangeEvents[0].socket, null);
       assert.equal(authenticationStateChangeEvents[0].socket.id, clientSocketId);
-      assert.equal(authenticationStateChangeEvents[0].oldState, 'unauthenticated');
-      assert.equal(authenticationStateChangeEvents[0].newState, 'authenticated');
+      assert.equal(authenticationStateChangeEvents[0].oldAuthState, 'unauthenticated');
+      assert.equal(authenticationStateChangeEvents[0].newAuthState, 'authenticated');
       assert.notEqual(authenticationStateChangeEvents[0].authToken, null);
       assert.equal(authenticationStateChangeEvents[0].authToken.username, 'bob');
 
       assert.equal(authStateChangeEvents.length, 1);
-      assert.equal(authStateChangeEvents[0].oldState, 'unauthenticated');
-      assert.equal(authStateChangeEvents[0].newState, 'authenticated');
+      assert.equal(authStateChangeEvents[0].oldAuthState, 'unauthenticated');
+      assert.equal(authStateChangeEvents[0].newAuthState, 'authenticated');
       assert.notEqual(authStateChangeEvents[0].authToken, null);
       assert.equal(authStateChangeEvents[0].authToken.username, 'bob');
     });
@@ -304,27 +304,27 @@ describe('Integration tests', function () {
         }
       })();
 
-      let oldToken = await socket.listener('deauthenticate').once();
-      assert.equal(oldToken, initialAuthToken);
+      let {oldAuthToken} = await socket.listener('deauthenticate').once();
+      assert.equal(oldAuthToken, initialAuthToken);
 
       assert.equal(authStateChangeEvents.length, 2);
-      assert.equal(authStateChangeEvents[0].oldState, 'unauthenticated');
-      assert.equal(authStateChangeEvents[0].newState, 'authenticated');
+      assert.equal(authStateChangeEvents[0].oldAuthState, 'unauthenticated');
+      assert.equal(authStateChangeEvents[0].newAuthState, 'authenticated');
       assert.notEqual(authStateChangeEvents[0].authToken, null);
       assert.equal(authStateChangeEvents[0].authToken.username, 'bob');
-      assert.equal(authStateChangeEvents[1].oldState, 'authenticated');
-      assert.equal(authStateChangeEvents[1].newState, 'unauthenticated');
+      assert.equal(authStateChangeEvents[1].oldAuthState, 'authenticated');
+      assert.equal(authStateChangeEvents[1].newAuthState, 'unauthenticated');
       assert.equal(authStateChangeEvents[1].authToken, null);
 
       assert.equal(authenticationStateChangeEvents.length, 2);
       assert.notEqual(authenticationStateChangeEvents[0], null);
-      assert.equal(authenticationStateChangeEvents[0].oldState, 'unauthenticated');
-      assert.equal(authenticationStateChangeEvents[0].newState, 'authenticated');
+      assert.equal(authenticationStateChangeEvents[0].oldAuthState, 'unauthenticated');
+      assert.equal(authenticationStateChangeEvents[0].newAuthState, 'authenticated');
       assert.notEqual(authenticationStateChangeEvents[0].authToken, null);
       assert.equal(authenticationStateChangeEvents[0].authToken.username, 'bob');
       assert.notEqual(authenticationStateChangeEvents[1], null);
-      assert.equal(authenticationStateChangeEvents[1].oldState, 'authenticated');
-      assert.equal(authenticationStateChangeEvents[1].newState, 'unauthenticated');
+      assert.equal(authenticationStateChangeEvents[1].oldAuthState, 'authenticated');
+      assert.equal(authenticationStateChangeEvents[1].newAuthState, 'unauthenticated');
       assert.equal(authenticationStateChangeEvents[1].authToken, null);
     });
 
@@ -338,9 +338,9 @@ describe('Integration tests', function () {
       let packet = await client.listener('connect').once();
       // Any token containing the username 'alice' should be blocked by the MIDDLEWARE_AUTHENTICATE middleware.
       // This will only affects token-based authentication, not the credentials-based login event.
-      assert.equal(packet.status.isAuthenticated, false);
-      assert.notEqual(packet.status.authError, null);
-      assert.equal(packet.status.authError.name, 'AuthenticateMiddlewareError');
+      assert.equal(packet.isAuthenticated, false);
+      assert.notEqual(packet.authError, null);
+      assert.equal(packet.authError.name, 'AuthenticateMiddlewareError');
     });
 
     it('Token should be available after Promise resolves if token engine signing is synchronous', async function () {
@@ -440,7 +440,7 @@ describe('Integration tests', function () {
 
       let packet = await client.listener('connect').once();
 
-      assert.equal(packet.status.isAuthenticated, true);
+      assert.equal(packet.isAuthenticated, true);
       assert.notEqual(client.authToken, null);
       assert.equal(client.authToken.username, 'bob');
     });
@@ -933,7 +933,7 @@ describe('Integration tests', function () {
       (async () => {
         for await (let packet of client.listener('connect')) {
           clientConnectEmitted = true;
-          clientConnectStatus = packet.status;
+          clientConnectStatus = packet;
         }
       })();
 

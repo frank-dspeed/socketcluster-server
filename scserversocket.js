@@ -419,11 +419,11 @@ SCServerSocket.prototype.invoke = function (event, data, options) {
   });
 };
 
-SCServerSocket.prototype.triggerAuthenticationEvents = function (oldState) {
-  if (oldState !== this.AUTHENTICATED) {
+SCServerSocket.prototype.triggerAuthenticationEvents = function (oldAuthState) {
+  if (oldAuthState !== this.AUTHENTICATED) {
     let stateChangeData = {
-      oldState: oldState,
-      newState: this.authState,
+      oldAuthState,
+      newAuthState: this.authState,
       authToken: this.authToken
     };
     this.emit('authStateChange', stateChangeData);
@@ -441,7 +441,7 @@ SCServerSocket.prototype.triggerAuthenticationEvents = function (oldState) {
 
 SCServerSocket.prototype.setAuthToken = async function (data, options) {
   let authToken = cloneDeep(data);
-  let oldState = this.authState;
+  let oldAuthState = this.authState;
   this.authState = this.AUTHENTICATED;
 
   if (options == null) {
@@ -530,7 +530,7 @@ SCServerSocket.prototype.setAuthToken = async function (data, options) {
     this.emit('authTokenSigned', {signedAuthToken});
   }
 
-  this.triggerAuthenticationEvents(oldState);
+  this.triggerAuthenticationEvents(oldAuthState);
   try {
     await sendAuthTokenToClient(signedAuthToken);
   } catch (err) {
@@ -546,15 +546,15 @@ SCServerSocket.prototype.getAuthToken = function () {
 };
 
 SCServerSocket.prototype.deauthenticateSelf = function () {
-  let oldState = this.authState;
-  let oldToken = this.authToken;
+  let oldAuthState = this.authState;
+  let oldAuthToken = this.authToken;
   this.signedAuthToken = null;
   this.authToken = null;
   this.authState = this.UNAUTHENTICATED;
-  if (oldState !== this.UNAUTHENTICATED) {
+  if (oldAuthState !== this.UNAUTHENTICATED) {
     let stateChangeData = {
-      oldState: oldState,
-      newState: this.authState
+      oldAuthState,
+      newAuthState: this.authState
     };
     this.emit('authStateChange', stateChangeData);
     this.server.emit('authenticationStateChange', {
@@ -562,10 +562,10 @@ SCServerSocket.prototype.deauthenticateSelf = function () {
       ...stateChangeData
     });
   }
-  this.emit('deauthenticate', oldToken);
+  this.emit('deauthenticate', {oldAuthToken});
   this.server.emit('deauthentication', {
     socket: this,
-    oldToken
+    oldAuthToken
   });
 };
 

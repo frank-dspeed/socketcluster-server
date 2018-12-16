@@ -357,7 +357,7 @@ SCServer.prototype._processAuthToken = function (scSocket, signedAuthToken, call
     let err = result.error;
     let token = result.token;
 
-    let oldState = scSocket.authState;
+    let oldAuthState = scSocket.authState;
     if (token) {
       scSocket.signedAuthToken = signedAuthToken;
       scSocket.authToken = token;
@@ -387,7 +387,7 @@ SCServer.prototype._processAuthToken = function (scSocket, signedAuthToken, call
         }
         // If an error is passed back from the authenticate middleware, it will be treated as a
         // server warning and not a socket error.
-        callback(middlewareError, isBadToken || false, oldState);
+        callback(middlewareError, isBadToken || false, oldAuthState);
       });
     } else {
       let errorData = this._processTokenError(err);
@@ -400,7 +400,7 @@ SCServer.prototype._processAuthToken = function (scSocket, signedAuthToken, call
           this._emitBadAuthTokenError(scSocket, errorData.authError, signedAuthToken);
         }
       }
-      callback(errorData.authError, errorData.isBadToken, oldState);
+      callback(errorData.authError, errorData.isBadToken, oldAuthState);
     }
   };
 
@@ -453,13 +453,13 @@ SCServer.prototype._handleSocketConnection = function (wsSocket, upgradeReq) {
     for await (let rpc of scSocket.procedure('#authenticate')) {
       let signedAuthToken = rpc.data;
 
-      this._processAuthToken(scSocket, signedAuthToken, (err, isBadToken, oldState) => {
+      this._processAuthToken(scSocket, signedAuthToken, (err, isBadToken, oldAuthState) => {
         if (err) {
           if (isBadToken) {
             scSocket.deauthenticate();
           }
         } else {
-          scSocket.triggerAuthenticationEvents(oldState);
+          scSocket.triggerAuthenticationEvents(oldAuthState);
         }
         if (err && isBadToken) {
           rpc.error(err);
@@ -616,7 +616,7 @@ SCServer.prototype._handleSocketConnection = function (wsSocket, upgradeReq) {
           scSocket.disconnect(err.statusCode);
           return;
         }
-        this._processAuthToken(scSocket, signedAuthToken, (err, isBadToken, oldState) => {
+        this._processAuthToken(scSocket, signedAuthToken, (err, isBadToken, oldAuthState) => {
           if (scSocket.state === scSocket.CLOSED) {
             return;
           }
@@ -659,7 +659,7 @@ SCServer.prototype._handleSocketConnection = function (wsSocket, upgradeReq) {
             // consumers to be setup from inside the connection loop.
             (async () => {
               await this.listener('connection').once();
-              scSocket.triggerAuthenticationEvents(oldState);
+              scSocket.triggerAuthenticationEvents(oldAuthState);
             })();
           }
 
