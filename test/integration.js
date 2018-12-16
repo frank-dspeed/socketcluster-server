@@ -220,7 +220,6 @@ describe('Integration tests', function () {
       var authStateChangeEvents = [];
 
       (async () => {
-        // TODO 2: Consider wrapping everything from streams inside packet objects.
         for await (let stateChangePacket of server.listener('authenticationStateChange')) {
           authenticationStateChangeEvents.push(stateChangePacket);
         }
@@ -228,7 +227,6 @@ describe('Integration tests', function () {
 
       (async () => {
         for await (let {socket} of server.listener('connection')) {
-          // TODO 2: Consider wrapping everything from streams inside packet objects.
           (async () => {
             for await (let {authToken} of socket.listener('authenticate')) {
               authenticateEvents.push(authToken);
@@ -891,11 +889,12 @@ describe('Integration tests', function () {
       });
 
       var connectionEmitted = false;
-      var connectionStatus;
+      var connectionEvent;
 
       (async () => {
-        for await (let {socket} of server.listener('connection')) {
-          connectionHandler(socket);
+        for await (let event of server.listener('connection')) {
+          connectionEvent = event;
+          connectionHandler(event.socket);
           connectionEmitted = true;
         }
       })();
@@ -943,11 +942,11 @@ describe('Integration tests', function () {
       assert.equal(connectionEmitted, true);
       assert.equal(clientConnectEmitted, true);
 
-      // assert.notEqual(connectionStatus, null); // TODO 2: Uncomment after it's available.
-      // assert.equal(connectionStatus.id, socketId);
-      // assert.equal(connectionStatus.pingTimeout, server.pingTimeout);
-      // assert.equal(connectionStatus.authError, null);
-      // assert.equal(connectionStatus.isAuthenticated, false);
+      assert.notEqual(connectionEvent, null);
+      assert.equal(connectionEvent.id, socketId);
+      assert.equal(connectionEvent.pingTimeout, server.pingTimeout);
+      assert.equal(connectionEvent.authError, null);
+      assert.equal(connectionEvent.isAuthenticated, false);
 
       assert.notEqual(connectStatus, null);
       assert.equal(connectStatus.id, socketId);
