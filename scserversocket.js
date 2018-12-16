@@ -428,11 +428,11 @@ SCServerSocket.prototype.triggerAuthenticationEvents = function (oldState) {
     };
     this.emit('authStateChange', stateChangeData);
     this.server.emit('authenticationStateChange', {
-      socket: this, // TODO 2: Maybe expand stateChangeData into the top level. Also, consider doing this for all places in the code where socket is a property.
-      status: stateChangeData
+      socket: this,
+      ...stateChangeData
     });
   }
-  this.emit('authenticate', this.authToken);
+  this.emit('authenticate', {authToken: this.authToken});
   this.server.emit('authentication', {
     socket: this,
     authToken: this.authToken
@@ -527,7 +527,7 @@ SCServerSocket.prototype.setAuthToken = async function (data, options) {
   }
   if (this.authToken === authToken) {
     this.signedAuthToken = signedAuthToken;
-    this.emit('authTokenSigned', signedAuthToken);
+    this.emit('authTokenSigned', {signedAuthToken});
   }
 
   this.triggerAuthenticationEvents(oldState);
@@ -559,7 +559,7 @@ SCServerSocket.prototype.deauthenticateSelf = function () {
     this.emit('authStateChange', stateChangeData);
     this.server.emit('authenticationStateChange', {
       socket: this,
-      status: stateChangeData
+      ...stateChangeData
     });
   }
   this.emit('deauthenticate', oldToken);

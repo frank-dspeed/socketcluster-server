@@ -152,7 +152,7 @@ describe('Integration tests', function () {
     server = socketClusterServer.listen(portNumber, serverOptions);
 
     (async () => {
-      for await (let socket of server.listener('connection')) {
+      for await (let {socket} of server.listener('connection')) {
         connectionHandler(socket);
       }
     })();
@@ -227,10 +227,10 @@ describe('Integration tests', function () {
       })();
 
       (async () => {
-        for await (let socket of server.listener('connection')) {
+        for await (let {socket} of server.listener('connection')) {
           // TODO 2: Consider wrapping everything from streams inside packet objects.
           (async () => {
-            for await (let authToken of socket.listener('authenticate')) {
+            for await (let {authToken} of socket.listener('authenticate')) {
               authenticateEvents.push(authToken);
             }
           })();
@@ -263,10 +263,10 @@ describe('Integration tests', function () {
       assert.equal(authenticationStateChangeEvents.length, 1);
       assert.notEqual(authenticationStateChangeEvents[0].socket, null);
       assert.equal(authenticationStateChangeEvents[0].socket.id, clientSocketId);
-      assert.equal(authenticationStateChangeEvents[0].status.oldState, 'unauthenticated');
-      assert.equal(authenticationStateChangeEvents[0].status.newState, 'authenticated');
-      assert.notEqual(authenticationStateChangeEvents[0].status.authToken, null);
-      assert.equal(authenticationStateChangeEvents[0].status.authToken.username, 'bob');
+      assert.equal(authenticationStateChangeEvents[0].oldState, 'unauthenticated');
+      assert.equal(authenticationStateChangeEvents[0].newState, 'authenticated');
+      assert.notEqual(authenticationStateChangeEvents[0].authToken, null);
+      assert.equal(authenticationStateChangeEvents[0].authToken.username, 'bob');
 
       assert.equal(authStateChangeEvents.length, 1);
       assert.equal(authStateChangeEvents[0].oldState, 'unauthenticated');
@@ -295,7 +295,7 @@ describe('Integration tests', function () {
         }
       })();
 
-      let socket = await server.listener('connection').once();
+      let {socket} = await server.listener('connection').once();
       let initialAuthToken = socket.authToken;
 
       (async () => {
@@ -317,15 +317,15 @@ describe('Integration tests', function () {
       assert.equal(authStateChangeEvents[1].authToken, null);
 
       assert.equal(authenticationStateChangeEvents.length, 2);
-      assert.notEqual(authenticationStateChangeEvents[0].status, null);
-      assert.equal(authenticationStateChangeEvents[0].status.oldState, 'unauthenticated');
-      assert.equal(authenticationStateChangeEvents[0].status.newState, 'authenticated');
-      assert.notEqual(authenticationStateChangeEvents[0].status.authToken, null);
-      assert.equal(authenticationStateChangeEvents[0].status.authToken.username, 'bob');
-      assert.notEqual(authenticationStateChangeEvents[1].status, null);
-      assert.equal(authenticationStateChangeEvents[1].status.oldState, 'authenticated');
-      assert.equal(authenticationStateChangeEvents[1].status.newState, 'unauthenticated');
-      assert.equal(authenticationStateChangeEvents[1].status.authToken, null);
+      assert.notEqual(authenticationStateChangeEvents[0], null);
+      assert.equal(authenticationStateChangeEvents[0].oldState, 'unauthenticated');
+      assert.equal(authenticationStateChangeEvents[0].newState, 'authenticated');
+      assert.notEqual(authenticationStateChangeEvents[0].authToken, null);
+      assert.equal(authenticationStateChangeEvents[0].authToken.username, 'bob');
+      assert.notEqual(authenticationStateChangeEvents[1], null);
+      assert.equal(authenticationStateChangeEvents[1].oldState, 'authenticated');
+      assert.equal(authenticationStateChangeEvents[1].newState, 'unauthenticated');
+      assert.equal(authenticationStateChangeEvents[1].authToken, null);
     });
 
     it('Should not authenticate the client if MIDDLEWARE_AUTHENTICATE blocks the authentication', async function () {
@@ -352,7 +352,7 @@ describe('Integration tests', function () {
       });
 
       (async () => {
-        for await (let socket of server.listener('connection')) {
+        for await (let {socket} of server.listener('connection')) {
           connectionHandler(socket);
         }
       })();
@@ -384,7 +384,7 @@ describe('Integration tests', function () {
       });
 
       (async () => {
-        for await (let socket of server.listener('connection')) {
+        for await (let {socket} of server.listener('connection')) {
           connectionHandler(socket);
         }
       })();
@@ -400,7 +400,7 @@ describe('Integration tests', function () {
       await client.listener('connect').once();
 
       client.invoke('login', {username: 'bob'});
-      let newSignedToken = await client.listener('authenticate').once();
+      await client.listener('authenticate').once();
 
       assert.equal(client.authState, 'authenticated');
       assert.notEqual(client.authToken, null);
@@ -416,7 +416,7 @@ describe('Integration tests', function () {
       });
 
       (async () => {
-        for await (let socket of server.listener('connection')) {
+        for await (let {socket} of server.listener('connection')) {
           connectionHandler(socket);
         }
       })();
@@ -454,7 +454,7 @@ describe('Integration tests', function () {
       });
 
       (async () => {
-        for await (let socket of server.listener('connection')) {
+        for await (let {socket} of server.listener('connection')) {
           connectionHandler(socket);
         }
       })();
@@ -488,7 +488,7 @@ describe('Integration tests', function () {
       });
 
       (async () => {
-        for await (let socket of server.listener('connection')) {
+        for await (let {socket} of server.listener('connection')) {
           connectionHandler(socket);
         }
       })();
@@ -522,7 +522,7 @@ describe('Integration tests', function () {
       });
 
       (async () => {
-        for await (let socket of server.listener('connection')) {
+        for await (let {socket} of server.listener('connection')) {
           connectionHandler(socket);
         }
       })();
@@ -557,7 +557,7 @@ describe('Integration tests', function () {
       var warningMap = {};
 
       (async () => {
-        for await (let socket of server.listener('connection')) {
+        for await (let {socket} of server.listener('connection')) {
           connectionHandler(socket);
         }
       })();
@@ -627,9 +627,9 @@ describe('Integration tests', function () {
       var authTokenSignedEventEmitted = false;
 
       (async () => {
-        for await (let socket of server.listener('connection')) {
+        for await (let {socket} of server.listener('connection')) {
           (async () => {
-            for await (let signedAuthToken of socket.listener('authTokenSigned')) {
+            for await (let {signedAuthToken} of socket.listener('authTokenSigned')) {
               authTokenSignedEventEmitted = true;
               assert.notEqual(signedAuthToken, null);
               assert.equal(signedAuthToken, socket.signedAuthToken);
@@ -688,7 +688,7 @@ describe('Integration tests', function () {
         client.invoke('login', {username: 'bob'});
       })();
 
-      let socket = await server.listener('connection').once();
+      let {socket} = await server.listener('connection').once();
 
       (async () => {
         for await (let {error} of socket.listener('error')) {
@@ -740,7 +740,7 @@ describe('Integration tests', function () {
         client.invoke('login', {username: 'bob'});
       })();
 
-      let socket = await server.listener('connection').once();
+      let {socket} = await server.listener('connection').once();
 
       (async () => {
         for await (let {error} of socket.listener('error')) {
@@ -779,7 +779,7 @@ describe('Integration tests', function () {
       });
 
       (async () => {
-        for await (let socket of server.listener('connection')) {
+        for await (let {socket} of server.listener('connection')) {
           connectionHandler(socket);
         }
       })();
@@ -821,7 +821,7 @@ describe('Integration tests', function () {
       });
 
       (async () => {
-        for await (let socket of server.listener('connection')) {
+        for await (let {socket} of server.listener('connection')) {
           connectionHandler(socket);
         }
       })();
@@ -835,7 +835,7 @@ describe('Integration tests', function () {
 
       var serverSocket;
       (async () => {
-        for await (let socket of server.listener('handshake')) {
+        for await (let {socket} of server.listener('handshake')) {
           serverSocket = socket;
         }
       })();
@@ -864,7 +864,7 @@ describe('Integration tests', function () {
       });
 
       (async () => {
-        for await (let socket of server.listener('connection')) {
+        for await (let {socket} of server.listener('connection')) {
           connectionHandler(socket);
         }
       })();
@@ -877,7 +877,7 @@ describe('Integration tests', function () {
         multiplex: false
       });
 
-      let socket = await server.listener('handshake').once();
+      let {socket} = await server.listener('handshake').once();
       assert.notEqual(socket.exchange, null);
     });
   });
@@ -894,7 +894,7 @@ describe('Integration tests', function () {
       var connectionStatus;
 
       (async () => {
-        for await (let socket of server.listener('connection')) { // TODO 2: Use packet object instead of socket. Get connectionStatus from there.
+        for await (let {socket} of server.listener('connection')) {
           connectionHandler(socket);
           connectionEmitted = true;
         }
@@ -913,7 +913,7 @@ describe('Integration tests', function () {
       var socketId;
 
       (async () => {
-        for await (let socket of server.listener('handshake')) {
+        for await (let {socket} of server.listener('handshake')) {
           (async () => {
             for await (let serverSocketStatus of socket.listener('connect')) {
               socketId = socket.id;
@@ -983,7 +983,7 @@ describe('Integration tests', function () {
       var connectionOnServer = false;
 
       (async () => {
-        for await (let socket of server.listener('connection')) {
+        for await (let {socket} of server.listener('connection')) {
           connectionOnServer = true;
           connectionHandler(socket);
         }
@@ -1002,7 +1002,7 @@ describe('Integration tests', function () {
       var clientSocketAborted = false;
 
       (async () => {
-        let socket = await server.listener('handshake').once();
+        let {socket} = await server.listener('handshake').once();
         assert.equal(server.pendingClientsCount, 1);
         assert.notEqual(server.pendingClients[socket.id], null);
 
@@ -1061,7 +1061,7 @@ describe('Integration tests', function () {
       var connectionOnServer = false;
 
       (async () => {
-        for await (let socket of server.listener('connection')) {
+        for await (let {socket} of server.listener('connection')) {
           connectionOnServer = true;
           connectionHandler(socket);
         }
@@ -1080,7 +1080,7 @@ describe('Integration tests', function () {
       var clientSocketAborted = false;
 
       (async () => {
-        let socket = await server.listener('handshake').once();
+        let {socket} = await server.listener('handshake').once();
         assert.equal(server.pendingClientsCount, 1);
         assert.notEqual(server.pendingClients[socket.id], null);
 
@@ -1138,7 +1138,7 @@ describe('Integration tests', function () {
       });
 
       (async () => {
-        for await (let socket of server.listener('connection')) {
+        for await (let {socket} of server.listener('connection')) {
           connectionOnServer = true;
           connectionHandler(socket);
         }
@@ -1157,7 +1157,7 @@ describe('Integration tests', function () {
       var serverClosure = false;
 
       (async () => {
-        for await (let socket of server.listener('handshake')) {
+        for await (let {socket} of server.listener('handshake')) {
           let packet = await socket.listener('close').once();
           serverSocketClosed = true;
           assert.equal(packet.code, 4444);
@@ -1200,7 +1200,7 @@ describe('Integration tests', function () {
       });
 
       (async () => {
-        for await (let socket of server.listener('connection')) {
+        for await (let {socket} of server.listener('connection')) {
           connectionOnServer = true;
           connectionHandler(socket);
         }
@@ -1219,7 +1219,7 @@ describe('Integration tests', function () {
       var serverClosure = false;
 
       (async () => {
-        for await (let socket of server.listener('handshake')) {
+        for await (let {socket} of server.listener('handshake')) {
           let packet = await socket.listener('close').once();
           serverSocketClosed = true;
           assert.equal(packet.code, 4445);
@@ -1259,7 +1259,7 @@ describe('Integration tests', function () {
       });
 
       (async () => {
-        for await (let socket of server.listener('connection')) {
+        for await (let {socket} of server.listener('connection')) {
           connectionHandler(socket);
           var isFirstMessage = true;
 
@@ -1356,7 +1356,7 @@ describe('Integration tests', function () {
       });
 
       (async () => {
-        for await (let socket of server.listener('connection')) {
+        for await (let {socket} of server.listener('connection')) {
           connectionHandler(socket);
         }
       })();
@@ -1406,7 +1406,7 @@ describe('Integration tests', function () {
       });
 
       (async () => {
-        for await (let socket of server.listener('connection')) {
+        for await (let {socket} of server.listener('connection')) {
           connectionHandler(socket);
         }
       })();
@@ -1526,7 +1526,7 @@ describe('Integration tests', function () {
         client.disconnect();
       })();
 
-      let socket = await server.listener('connection').once();
+      let {socket} = await server.listener('connection').once();
 
       (async () => {
         for await (let packet of socket.listener('unsubscribe')) {
@@ -1582,7 +1582,7 @@ describe('Integration tests', function () {
         }
       })();
 
-      let socket = await server.listener('connection').once();
+      let {socket} = await server.listener('connection').once();
 
       (async () => {
         for await (let packet of socket.listener('unsubscribe')) {
@@ -1618,7 +1618,7 @@ describe('Integration tests', function () {
       var errorList = [];
 
       (async () => {
-        for await (let socket of server.listener('connection')) {
+        for await (let {socket} of server.listener('connection')) {
           (async () => {
             for await (let {error} of socket.listener('error')) {
               errorList.push(error);
@@ -1664,7 +1664,7 @@ describe('Integration tests', function () {
       });
 
       (async () => {
-        for await (let socket of server.listener('connection')) {
+        for await (let {socket} of server.listener('connection')) {
           (async () => {
             for await (let packet of socket.listener('unsubscribe')) {
               if (packet.channel === 'foo') {
@@ -1720,7 +1720,7 @@ describe('Integration tests', function () {
       var wasKickOutCalled = false;
 
       (async () => {
-        for await (let socket of server.listener('connection')) {
+        for await (let {socket} of server.listener('connection')) {
           serverSocket = socket;
 
           (async () => {
@@ -1771,7 +1771,7 @@ describe('Integration tests', function () {
       var wasKickOutCalled = false;
 
       (async () => {
-        for await (let socket of server.listener('connection')) {
+        for await (let {socket} of server.listener('connection')) {
           serverSocket = socket;
 
           (async () => {
@@ -1820,7 +1820,7 @@ describe('Integration tests', function () {
       });
 
       (async () => {
-        for await (let socket of server.listener('connection')) {
+        for await (let {socket} of server.listener('connection')) {
           await wait(100);
           socket.destroy(1000, 'Custom reason');
         }
@@ -1851,7 +1851,7 @@ describe('Integration tests', function () {
       var serverSocket;
 
       (async () => {
-        for await (let socket of server.listener('connection')) {
+        for await (let {socket} of server.listener('connection')) {
           serverSocket = socket;
           assert.equal(socket.active, true);
           await wait(100);

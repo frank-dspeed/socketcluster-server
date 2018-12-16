@@ -93,7 +93,7 @@ let SCServer = function (options) {
   // TODO 2: Implement StreamDemux in sc-broker and sc-broker-cluster.
   this.brokerEngine.once('ready', () => {
     this.isReady = true;
-    this.emit('ready');
+    this.emit('ready', {});
   });
 
   let wsEngine = typeof opts.wsEngine === 'string' ? require(opts.wsEngine) : opts.wsEngine;
@@ -538,7 +538,7 @@ SCServer.prototype._handleSocketConnection = function (wsSocket, upgradeReq) {
   };
   handleSocketUnsubscribe();
 
-  let cleanupSocket = (type, code, data) => {
+  let cleanupSocket = (type, code, reason) => {
     clearTimeout(scSocket._handshakeTimeoutRef);
 
     scSocket.closeProcedure('#handshake');
@@ -567,19 +567,19 @@ SCServer.prototype._handleSocketConnection = function (wsSocket, upgradeReq) {
       this.emit('disconnection', {
         socket: scSocket,
         code,
-        data
+        reason
       });
     } else if (type === 'abort') {
       this.emit('connectionAbort', {
         socket: scSocket,
         code,
-        data
+        reason
       });
     }
     this.emit('closure', {
       socket: scSocket,
       code,
-      data
+      reason
     });
 
     this._unsubscribeSocketFromAllChannels(scSocket);
@@ -664,7 +664,7 @@ SCServer.prototype._handleSocketConnection = function (wsSocket, upgradeReq) {
           }
 
           scSocket.emit('connect', serverSocketStatus);
-          this.emit('connection', scSocket);
+          this.emit('connection', {socket: scSocket, ...serverSocketStatus});
 
           // Treat authentication failure as a 'soft' error
           rpc.end(clientSocketStatus);
@@ -675,7 +675,7 @@ SCServer.prototype._handleSocketConnection = function (wsSocket, upgradeReq) {
   handleSocketHandshake();
 
   // Emit event to signal that a socket handshake has been initiated.
-  this.emit('handshake', scSocket);
+  this.emit('handshake', {socket: scSocket});
 };
 
 SCServer.prototype.close = function () {
