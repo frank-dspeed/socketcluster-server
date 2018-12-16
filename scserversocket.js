@@ -10,7 +10,7 @@ const InvalidActionError = scErrors.InvalidActionError;
 const AuthError = scErrors.AuthError;
 
 
-let SCServerSocket = function (id, server, socket) {
+function SCServerSocket(id, server, socket) {
   this._autoAckRPCs = {
     '#publish': 1
   };

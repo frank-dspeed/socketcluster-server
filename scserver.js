@@ -22,7 +22,7 @@ const BrokerError = scErrors.BrokerError;
 const ServerProtocolError = scErrors.ServerProtocolError;
 
 
-let SCServer = function (options) {
+function SCServer(options) {
   let opts = {
     brokerEngine: new SCSimpleBroker(),
     wsEngine: 'ws',

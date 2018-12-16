@@ -1,31 +1,31 @@
-var assert = require('assert');
-var socketClusterServer = require('../');
-var socketCluster = require('socketcluster-client');
-var localStorage = require('localStorage');
-var SCSimpleBroker = require('sc-simple-broker').SCSimpleBroker;
+const assert = require('assert');
+const socketClusterServer = require('../');
+const socketCluster = require('socketcluster-client');
+const localStorage = require('localStorage');
+const SCSimpleBroker = require('sc-simple-broker').SCSimpleBroker;
 
-// TODO 2: Use const and let instead of var everywhere; in source code as well as tests.
+// TODO 2: Use const and let instead of let everywhere; in source code as well as tests.
 // Add to the global scope like in browser.
 global.localStorage = localStorage;
 
-var portNumber = 8008;
+let portNumber = 8008;
 
-var clientOptions;
-var serverOptions;
+let clientOptions;
+let serverOptions;
 
-var allowedUsers = {
+let allowedUsers = {
   bob: true,
   alice: true
 };
 
-var TEN_DAYS_IN_SECONDS = 60 * 60 * 24 * 10;
-var WS_ENGINE = 'ws';
+const TEN_DAYS_IN_SECONDS = 60 * 60 * 24 * 10;
+const WS_ENGINE = 'ws';
 
-var validSignedAuthTokenBob = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VybmFtZSI6ImJvYiIsImV4cCI6MzE2Mzc1ODk3OTA4MDMxMCwiaWF0IjoxNTAyNzQ3NzQ2fQ.dSZOfsImq4AvCu-Or3Fcmo7JNv1hrV3WqxaiSKkTtAo';
-var validSignedAuthTokenAlice = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VybmFtZSI6ImFsaWNlIiwiaWF0IjoxNTE4NzI4MjU5LCJleHAiOjMxNjM3NTg5NzkwODAzMTB9.XxbzPPnnXrJfZrS0FJwb_EAhIu2VY5i7rGyUThtNLh4';
-var invalidSignedAuthToken = 'fakebGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.fakec2VybmFtZSI6ImJvYiIsImlhdCI6MTUwMjYyNTIxMywiZXhwIjoxNTAyNzExNjEzfQ.fakemYcOOjM9bzmS4UYRvlWSk_lm3WGHvclmFjLbyOk';
+let validSignedAuthTokenBob = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VybmFtZSI6ImJvYiIsImV4cCI6MzE2Mzc1ODk3OTA4MDMxMCwiaWF0IjoxNTAyNzQ3NzQ2fQ.dSZOfsImq4AvCu-Or3Fcmo7JNv1hrV3WqxaiSKkTtAo';
+let validSignedAuthTokenAlice = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VybmFtZSI6ImFsaWNlIiwiaWF0IjoxNTE4NzI4MjU5LCJleHAiOjMxNjM3NTg5NzkwODAzMTB9.XxbzPPnnXrJfZrS0FJwb_EAhIu2VY5i7rGyUThtNLh4';
+let invalidSignedAuthToken = 'fakebGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.fakec2VybmFtZSI6ImJvYiIsImlhdCI6MTUwMjYyNTIxMywiZXhwIjoxNTAyNzExNjEzfQ.fakemYcOOjM9bzmS4UYRvlWSk_lm3WGHvclmFjLbyOk';
 
-var server, client;
+let server, client;
 
 function wait(duration) {
   return new Promise((resolve) => {
@@ -47,7 +47,7 @@ function connectionHandler(socket) {
         socket.setAuthToken(rpc.data);
         rpc.end();
       } else {
-        var err = new Error('Failed to login');
+        let err = new Error('Failed to login');
         err.name = 'FailedLoginError';
         rpc.error(err);
       }
@@ -62,7 +62,7 @@ function connectionHandler(socket) {
         });
         rpc.end();
       } else {
-        var err = new Error('Failed to login');
+        let err = new Error('Failed to login');
         err.name = 'FailedLoginError';
         rpc.error(err);
       }
@@ -76,7 +76,7 @@ function connectionHandler(socket) {
         socket.setAuthToken(rpc.data);
         rpc.end();
       } else {
-        var err = new Error('Failed to login');
+        let err = new Error('Failed to login');
         err.name = 'FailedLoginError';
         rpc.error(err);
       }
@@ -92,7 +92,7 @@ function connectionHandler(socket) {
         });
         rpc.end();
       } else {
-        var err = new Error('Failed to login');
+        let err = new Error('Failed to login');
         err.name = 'FailedLoginError';
         rpc.error(err);
       }
@@ -110,7 +110,7 @@ function connectionHandler(socket) {
         } catch (err) {}
         rpc.end();
       } else {
-        var err = new Error('Failed to login');
+        let err = new Error('Failed to login');
         err.name = 'FailedLoginError';
         rpc.error(err);
       }
@@ -159,7 +159,7 @@ describe('Integration tests', function () {
 
     server.addMiddleware(server.MIDDLEWARE_AUTHENTICATE, async function (req) {
       if (req.authToken.username === 'alice') {
-        var err = new Error('Blocked by MIDDLEWARE_AUTHENTICATE');
+        let err = new Error('Blocked by MIDDLEWARE_AUTHENTICATE');
         err.name = 'AuthenticateMiddlewareError';
         throw err;
       }
@@ -214,10 +214,10 @@ describe('Integration tests', function () {
     it('Should allow switching between users', async function () {
       global.localStorage.setItem('socketCluster.authToken', validSignedAuthTokenBob);
 
-      var authenticateEvents = [];
-      var deauthenticateEvents = [];
-      var authenticationStateChangeEvents = [];
-      var authStateChangeEvents = [];
+      let authenticateEvents = [];
+      let deauthenticateEvents = [];
+      let authenticationStateChangeEvents = [];
+      let authStateChangeEvents = [];
 
       (async () => {
         for await (let stateChangePacket of server.listener('authenticationStateChange')) {
@@ -245,7 +245,7 @@ describe('Integration tests', function () {
         }
       })();
 
-      var clientSocketId;
+      let clientSocketId;
       client = socketCluster.create(clientOptions);
       await client.listener('connect').once();
       clientSocketId = client.id;
@@ -276,8 +276,8 @@ describe('Integration tests', function () {
     it('Should emit correct events/data when socket is deauthenticated', async function () {
       global.localStorage.setItem('socketCluster.authToken', validSignedAuthTokenBob);
 
-      var authenticationStateChangeEvents = [];
-      var authStateChangeEvents = [];
+      let authenticationStateChangeEvents = [];
+      let authStateChangeEvents = [];
 
       (async () => {
         for await (let stateChangePacket of server.listener('authenticationStateChange')) {
@@ -471,8 +471,8 @@ describe('Integration tests', function () {
 
       assert.notEqual(client.authToken, null);
       assert.notEqual(client.authToken.exp, null);
-      var dateMillisecondsInTenDays = Date.now() + TEN_DAYS_IN_SECONDS * 1000;
-      var dateDifference = Math.abs(dateMillisecondsInTenDays - client.authToken.exp * 1000);
+      let dateMillisecondsInTenDays = Date.now() + TEN_DAYS_IN_SECONDS * 1000;
+      let dateDifference = Math.abs(dateMillisecondsInTenDays - client.authToken.exp * 1000);
       // Expiry must be accurate within 1000 milliseconds.
       assert.equal(dateDifference < 1000, true);
     });
@@ -505,8 +505,8 @@ describe('Integration tests', function () {
 
       assert.notEqual(client.authToken, null);
       assert.notEqual(client.authToken.exp, null);
-      var dateMillisecondsInTenDays = Date.now() + TEN_DAYS_IN_SECONDS * 1000;
-      var dateDifference = Math.abs(dateMillisecondsInTenDays - client.authToken.exp * 1000);
+      let dateMillisecondsInTenDays = Date.now() + TEN_DAYS_IN_SECONDS * 1000;
+      let dateDifference = Math.abs(dateMillisecondsInTenDays - client.authToken.exp * 1000);
       // Expiry must be accurate within 1000 milliseconds.
       assert.equal(dateDifference < 1000, true);
     });
@@ -539,8 +539,8 @@ describe('Integration tests', function () {
 
       assert.notEqual(client.authToken, null);
       assert.notEqual(client.authToken.exp, null);
-      var dateMillisecondsInTenDays = Date.now() + TEN_DAYS_IN_SECONDS * 1000;
-      var dateDifference = Math.abs(dateMillisecondsInTenDays - client.authToken.exp * 1000);
+      let dateMillisecondsInTenDays = Date.now() + TEN_DAYS_IN_SECONDS * 1000;
+      let dateDifference = Math.abs(dateMillisecondsInTenDays - client.authToken.exp * 1000);
       // Expiry must be accurate within 1000 milliseconds.
       assert.equal(dateDifference < 1000, true);
     });
@@ -552,7 +552,7 @@ describe('Integration tests', function () {
         wsEngine: WS_ENGINE,
         authVerifyAsync: false
       });
-      var warningMap = {};
+      let warningMap = {};
 
       (async () => {
         for await (let {socket} of server.listener('connection')) {
@@ -622,7 +622,7 @@ describe('Integration tests', function () {
         authSignAsync: true
       });
 
-      var authTokenSignedEventEmitted = false;
+      let authTokenSignedEventEmitted = false;
 
       (async () => {
         for await (let {socket} of server.listener('connection')) {
@@ -640,7 +640,7 @@ describe('Integration tests', function () {
                 socket.setAuthToken(req.data, {async: true});
                 req.end();
               } else {
-                var err = new Error('Failed to login');
+                let err = new Error('Failed to login');
                 err.name = 'FailedLoginError';
                 req.error(err);
               }
@@ -673,7 +673,7 @@ describe('Integration tests', function () {
         ackTimeout: 1000
       });
 
-      var socketErrors = [];
+      let socketErrors = [];
 
       (async () => {
         await server.listener('ready').once();
@@ -710,7 +710,7 @@ describe('Integration tests', function () {
         assert.notEqual(socketErrors[0], null);
         assert.equal(socketErrors[0].name, 'AuthError');
       } else {
-        var err = new Error('Failed to login');
+        let err = new Error('Failed to login');
         err.name = 'FailedLoginError';
         req.error(err);
       }
@@ -725,7 +725,7 @@ describe('Integration tests', function () {
         ackTimeout: 1000
       });
 
-      var socketErrors = [];
+      let socketErrors = [];
 
       (async () => {
         await server.listener('ready').once();
@@ -761,7 +761,7 @@ describe('Integration tests', function () {
         assert.notEqual(socketErrors[0], null);
         assert.equal(socketErrors[0].name, 'AuthError');
       } else {
-        var err = new Error('Failed to login');
+        let err = new Error('Failed to login');
         err.name = 'FailedLoginError';
         req.error(err);
       }
@@ -831,7 +831,7 @@ describe('Integration tests', function () {
         multiplex: false
       });
 
-      var serverSocket;
+      let serverSocket;
       (async () => {
         for await (let {socket} of server.listener('handshake')) {
           serverSocket = socket;
@@ -888,8 +888,8 @@ describe('Integration tests', function () {
         wsEngine: WS_ENGINE
       });
 
-      var connectionEmitted = false;
-      var connectionEvent;
+      let connectionEmitted = false;
+      let connectionEvent;
 
       (async () => {
         for await (let event of server.listener('connection')) {
@@ -907,9 +907,9 @@ describe('Integration tests', function () {
         multiplex: false
       });
 
-      var connectEmitted = false;
-      var connectStatus;
-      var socketId;
+      let connectEmitted = false;
+      let connectStatus;
+      let socketId;
 
       (async () => {
         for await (let {socket} of server.listener('handshake')) {
@@ -926,8 +926,8 @@ describe('Integration tests', function () {
         }
       })();
 
-      var clientConnectEmitted = false;
-      var clientConnectStatus = false;
+      let clientConnectEmitted = false;
+      let clientConnectStatus = false;
 
       (async () => {
         for await (let packet of client.listener('connect')) {
@@ -979,7 +979,7 @@ describe('Integration tests', function () {
         }
       });
 
-      var connectionOnServer = false;
+      let connectionOnServer = false;
 
       (async () => {
         for await (let {socket} of server.listener('connection')) {
@@ -996,9 +996,9 @@ describe('Integration tests', function () {
         multiplex: false
       });
 
-      var socketDisconnected = false;
-      var socketDisconnectedBeforeConnect = false;
-      var clientSocketAborted = false;
+      let socketDisconnected = false;
+      let socketDisconnectedBeforeConnect = false;
+      let clientSocketAborted = false;
 
       (async () => {
         let {socket} = await server.listener('handshake').once();
@@ -1021,8 +1021,8 @@ describe('Integration tests', function () {
         })();
       })();
 
-      var serverDisconnected = false;
-      var serverSocketAborted = false;
+      let serverDisconnected = false;
+      let serverSocketAborted = false;
 
       (async () => {
         await server.listener('disconnection').once();
@@ -1057,7 +1057,7 @@ describe('Integration tests', function () {
         }
       });
 
-      var connectionOnServer = false;
+      let connectionOnServer = false;
 
       (async () => {
         for await (let {socket} of server.listener('connection')) {
@@ -1074,9 +1074,9 @@ describe('Integration tests', function () {
         multiplex: false
       });
 
-      var socketDisconnected = false;
-      var socketDisconnectedBeforeConnect = false;
-      var clientSocketAborted = false;
+      let socketDisconnected = false;
+      let socketDisconnectedBeforeConnect = false;
+      let clientSocketAborted = false;
 
       (async () => {
         let {socket} = await server.listener('handshake').once();
@@ -1099,8 +1099,8 @@ describe('Integration tests', function () {
         })();
       })();
 
-      var serverDisconnected = false;
-      var serverSocketAborted = false;
+      let serverDisconnected = false;
+      let serverSocketAborted = false;
 
       (async () => {
         await server.listener('disconnection').once();
@@ -1151,9 +1151,9 @@ describe('Integration tests', function () {
         multiplex: false
       });
 
-      var serverSocketClosed = false;
-      var serverSocketAborted = false;
-      var serverClosure = false;
+      let serverSocketClosed = false;
+      let serverSocketAborted = false;
+      let serverClosure = false;
 
       (async () => {
         for await (let {socket} of server.listener('handshake')) {
@@ -1213,9 +1213,9 @@ describe('Integration tests', function () {
         multiplex: false
       });
 
-      var serverSocketClosed = false;
-      var serverSocketDisconnected = false;
-      var serverClosure = false;
+      let serverSocketClosed = false;
+      let serverSocketDisconnected = false;
+      let serverClosure = false;
 
       (async () => {
         for await (let {socket} of server.listener('handshake')) {
@@ -1260,12 +1260,12 @@ describe('Integration tests', function () {
       (async () => {
         for await (let {socket} of server.listener('connection')) {
           connectionHandler(socket);
-          var isFirstMessage = true;
+          let isFirstMessage = true;
 
           (async () => {
             for await (let {message} of socket.listener('message')) {
               if (isFirstMessage) {
-                var data = JSON.parse(message);
+                let data = JSON.parse(message);
                 // All 20 subscriptions should arrive as a single message.
                 assert.equal(data.length, 20);
                 isFirstMessage = false;
@@ -1275,7 +1275,7 @@ describe('Integration tests', function () {
         }
       })();
 
-      var subscribeMiddlewareCounter = 0;
+      let subscribeMiddlewareCounter = 0;
 
       // Each subscription should pass through the middleware individually, even
       // though they were sent as a batch/array.
@@ -1286,7 +1286,7 @@ describe('Integration tests', function () {
           assert.equal(JSON.stringify(req.data), JSON.stringify({foo: 123}));
         } else if (req.channel === 'my-channel-12') {
           // Block my-channel-12
-          var err = new Error('You cannot subscribe to channel 12');
+          let err = new Error('You cannot subscribe to channel 12');
           err.name = 'UnauthorizedSubscribeError';
           next(err);
           return;
@@ -1302,9 +1302,9 @@ describe('Integration tests', function () {
         multiplex: false
       });
 
-      var channelList = [];
-      for (var i = 0; i < 20; i++) {
-        var subscribeOptions = {
+      let channelList = [];
+      for (let i = 0; i < 20; i++) {
+        let subscribeOptions = {
           batch: true
         };
         if (i === 10) {
@@ -1368,8 +1368,8 @@ describe('Integration tests', function () {
         multiplex: false
       });
 
-      var isSubscribed = false;
-      var error;
+      let isSubscribed = false;
+      let error;
 
       (async () => {
         for await (let packet of server.listener('subscription')) {
@@ -1418,14 +1418,14 @@ describe('Integration tests', function () {
         multiplex: false
       });
 
-      var nullInChannelArrayError;
-      var objectAsChannelNameError;
-      var nullChannelNameError;
-      var nullUnsubscribeError;
+      let nullInChannelArrayError;
+      let objectAsChannelNameError;
+      let nullChannelNameError;
+      let nullUnsubscribeError;
 
-      var undefinedPublishError;
-      var objectAsChannelNamePublishError;
-      var nullPublishError;
+      let undefinedPublishError;
+      let objectAsChannelNamePublishError;
+      let nullPublishError;
 
       // Hacks to capture the errors without relying on the standard client flow.
       client.transport._callbackMap[2] = {
@@ -1509,7 +1509,7 @@ describe('Integration tests', function () {
         wsEngine: WS_ENGINE
       });
 
-      var eventList = [];
+      let eventList = [];
 
       (async () => {
         await server.listener('ready').once();
@@ -1551,8 +1551,8 @@ describe('Integration tests', function () {
 
     it('When disconnecting a socket, the unsubscribe event should trigger after the disconnect event', async function () {
       portNumber++;
-      var customBrokerEngine = new SCSimpleBroker();
-      var defaultUnsubscribeSocket = customBrokerEngine.unsubscribeSocket;
+      let customBrokerEngine = new SCSimpleBroker();
+      let defaultUnsubscribeSocket = customBrokerEngine.unsubscribeSocket;
       customBrokerEngine.unsubscribeSocket = function (socket, channel) {
         return resolveAfterTimeout(100, defaultUnsubscribeSocket.call(this, socket, channel));
       };
@@ -1563,7 +1563,7 @@ describe('Integration tests', function () {
         brokerEngine: customBrokerEngine
       });
 
-      var eventList = [];
+      let eventList = [];
 
       (async () => {
         await server.listener('ready').once();
@@ -1614,7 +1614,7 @@ describe('Integration tests', function () {
         wsEngine: WS_ENGINE
       });
 
-      var errorList = [];
+      let errorList = [];
 
       (async () => {
         for await (let {socket} of server.listener('connection')) {
@@ -1650,8 +1650,8 @@ describe('Integration tests', function () {
 
     it('Socket should not receive messages from a channel which it has only just unsubscribed from (accounting for delayed unsubscribe by brokerEngine)', async function () {
       portNumber++;
-      var customBrokerEngine = new SCSimpleBroker();
-      var defaultUnsubscribeSocket = customBrokerEngine.unsubscribeSocket;
+      let customBrokerEngine = new SCSimpleBroker();
+      let defaultUnsubscribeSocket = customBrokerEngine.unsubscribeSocket;
       customBrokerEngine.unsubscribeSocket = function (socket, channel) {
         return resolveAfterTimeout(300, defaultUnsubscribeSocket.call(this, socket, channel));
       };
@@ -1686,9 +1686,9 @@ describe('Integration tests', function () {
       // it receives a #publish event.
       client.isSubscribed = function () { return true; };
 
-      var messageList = [];
+      let messageList = [];
 
-      var fooChannel = client.subscribe('foo');
+      let fooChannel = client.subscribe('foo');
 
       (async () => {
         for await (let data of fooChannel) {
@@ -1714,9 +1714,9 @@ describe('Integration tests', function () {
         wsEngine: WS_ENGINE
       });
 
-      var errorList = [];
-      var serverSocket;
-      var wasKickOutCalled = false;
+      let errorList = [];
+      let serverSocket;
+      let wasKickOutCalled = false;
 
       (async () => {
         for await (let {socket} of server.listener('connection')) {
@@ -1765,9 +1765,9 @@ describe('Integration tests', function () {
         wsEngine: WS_ENGINE
       });
 
-      var errorList = [];
-      var serverSocket;
-      var wasKickOutCalled = false;
+      let errorList = [];
+      let serverSocket;
+      let wasKickOutCalled = false;
 
       (async () => {
         for await (let {socket} of server.listener('connection')) {
@@ -1847,7 +1847,7 @@ describe('Integration tests', function () {
         wsEngine: WS_ENGINE
       });
 
-      var serverSocket;
+      let serverSocket;
 
       (async () => {
         for await (let {socket} of server.listener('connection')) {
@@ -1898,28 +1898,28 @@ describe('Integration tests', function () {
           multiplex: false
         });
 
-        var serverWarning = null;
+        let serverWarning = null;
         (async () => {
           for await (let {warning} of server.listener('warning')) {
             serverWarning = warning;
           }
         })();
 
-        var serverDisconnectionCode = null;
+        let serverDisconnectionCode = null;
         (async () => {
           for await (let packet of server.listener('disconnection')) {
             serverDisconnectionCode = packet.code;
           }
         })();
 
-        var clientError = null;
+        let clientError = null;
         (async () => {
           for await (let {error} of client.listener('error')) {
             clientError = error;
           }
         })();
 
-        var clientDisconnectCode = null;
+        let clientDisconnectCode = null;
         (async () => {
           for await (let packet of client.listener('disconnect')) {
             clientDisconnectCode = packet.code;
@@ -1966,28 +1966,28 @@ describe('Integration tests', function () {
           pingTimeoutDisabled: true
         });
 
-        var serverWarning = null;
+        let serverWarning = null;
         (async () => {
           for await (let {warning} of server.listener('warning')) {
             serverWarning = warning;
           }
         })();
 
-        var serverDisconnectionCode = null;
+        let serverDisconnectionCode = null;
         (async () => {
           for await (let packet of server.listener('disconnection')) {
             serverDisconnectionCode = packet.code;
           }
         })();
 
-        var clientError = null;
+        let clientError = null;
         (async () => {
           for await (let {error} of client.listener('error')) {
             clientError = error;
           }
         })();
 
-        var clientDisconnectCode = null;
+        let clientDisconnectCode = null;
         (async () => {
           for await (let packet of client.listener('disconnect')) {
             clientDisconnectCode = packet.code;
@@ -2005,8 +2005,8 @@ describe('Integration tests', function () {
   });
 
   describe('Middleware', function () {
-    var middlewareFunction;
-    var middlewareWasExecuted = false;
+    let middlewareFunction;
+    let middlewareWasExecuted = false;
 
     beforeEach('Launch server without middleware before start', async function () {
       portNumber++;
@@ -2066,15 +2066,15 @@ describe('Integration tests', function () {
 
     describe('MIDDLEWARE_HANDSHAKE_SC', function () {
       it('Should trigger correct events if MIDDLEWARE_HANDSHAKE_SC blocks with an error', async function () {
-        var middlewareWasExecuted = false;
-        var serverWarnings = [];
-        var clientErrors = [];
-        var abortStatus;
+        let middlewareWasExecuted = false;
+        let serverWarnings = [];
+        let clientErrors = [];
+        let abortStatus;
 
         middlewareFunction = async function (req) {
           await wait(100);
           middlewareWasExecuted = true;
-          var err = new Error('SC handshake failed because the server was too lazy');
+          let err = new Error('SC handshake failed because the server was too lazy');
           err.name = 'TooLazyHandshakeError';
           throw err;
         };
@@ -2115,14 +2115,14 @@ describe('Integration tests', function () {
       });
 
       it('Should send back default 4008 status code if MIDDLEWARE_HANDSHAKE_SC blocks without providing a status code', async function () {
-        var middlewareWasExecuted = false;
-        var abortStatus;
-        var abortReason;
+        let middlewareWasExecuted = false;
+        let abortStatus;
+        let abortReason;
 
         middlewareFunction = async function (req) {
           await wait(100);
           middlewareWasExecuted = true;
-          var err = new Error('SC handshake failed because the server was too lazy');
+          let err = new Error('SC handshake failed because the server was too lazy');
           err.name = 'TooLazyHandshakeError';
           throw err;
         };
@@ -2147,14 +2147,14 @@ describe('Integration tests', function () {
       });
 
       it('Should send back custom status code if MIDDLEWARE_HANDSHAKE_SC blocks by providing a status code', async function () {
-        var middlewareWasExecuted = false;
-        var abortStatus;
-        var abortReason;
+        let middlewareWasExecuted = false;
+        let abortStatus;
+        let abortReason;
 
         middlewareFunction = async function (req) {
           await wait(100);
           middlewareWasExecuted = true;
-          var err = new Error('SC handshake failed because of invalid query auth parameters');
+          let err = new Error('SC handshake failed because of invalid query auth parameters');
           err.name = 'InvalidAuthQueryHandshakeError';
           // Set custom 4501 status code as a property of the error.
           // We will treat this code as a fatal authentication failure on the front end.
@@ -2183,10 +2183,10 @@ describe('Integration tests', function () {
       });
 
       it('Should connect with a delay if next() is called after a timeout inside the middleware function', async function () {
-        var createConnectionTime = null;
-        var connectEventTime = null;
-        var abortStatus;
-        var abortReason;
+        let createConnectionTime = null;
+        let connectEventTime = null;
+        let abortStatus;
+        let abortReason;
 
         middlewareFunction = async function (req) {
           await wait(500);
