@@ -127,10 +127,6 @@ function connectionHandler(socket) {
 
 function destroyTestCase() {
   if (client) {
-    (async () => {
-      for await (let err of client.listener('error')) {}
-    })();
-
     if (client.state !== client.CLOSED) {
       client.disconnect();
       client.closeListener('close');
@@ -178,7 +174,7 @@ describe('Integration tests', function () {
     global.localStorage.removeItem('socketCluster.authToken');
   });
 
-  describe.skip('Socket authentication', function () {
+  describe('Socket authentication', function () {
     it('Should not send back error if JWT is not provided in handshake', async function () {
       client = socketCluster.create(clientOptions);
       let packet = await client.listener('connect').once();
@@ -858,7 +854,7 @@ describe('Integration tests', function () {
     });
   });
 
-  describe.skip('Socket handshake', function () {
+  describe('Socket handshake', function () {
     it('Exchange is attached to socket before the handshake event is triggered', async function () {
       portNumber++;
       server = socketClusterServer.listen(portNumber, {
@@ -885,7 +881,7 @@ describe('Integration tests', function () {
     });
   });
 
-  describe.skip('Socket connection', function () {
+  describe('Socket connection', function () {
     it('Server-side socket connect event and server connection event should trigger', async function () {
       portNumber++;
       server = socketClusterServer.listen(portNumber, {
@@ -970,7 +966,7 @@ describe('Integration tests', function () {
     });
   });
 
-  describe.skip('Socket disconnection', function () {
+  describe('Socket disconnection', function () {
     it('Server-side socket disconnect event should not trigger if the socket did not complete the handshake; instead, it should trigger connectAbort', async function () {
       portNumber++;
       server = socketClusterServer.listen(portNumber, {
@@ -1815,35 +1811,36 @@ describe('Integration tests', function () {
   });
 
   describe('Socket destruction', function () {
-    it('Server socket destroy should disconnect the socket', function (done) {
+    it('Server socket destroy should disconnect the socket', async function () {
       portNumber++;
       server = socketClusterServer.listen(portNumber, {
         authKey: serverOptions.authKey,
         wsEngine: WS_ENGINE
       });
 
-      server.on('connection', function (socket) {
-        setTimeout(function () {
+      (async () => {
+        for await (let socket of server.listener('connection')) {
+          await wait(100);
           socket.destroy(1000, 'Custom reason');
-        }, 100);
+        }
+      })();
+
+      await server.listener('ready').once();
+
+      client = socketCluster.create({
+        hostname: clientOptions.hostname,
+        port: portNumber,
+        multiplex: false
       });
-      server.on('ready', function () {
-        client = socketCluster.create({
-          hostname: clientOptions.hostname,
-          port: portNumber,
-          multiplex: false
-        });
-        client.on('disconnect', function (code, reason) {
-          assert.equal(code, 1000);
-          assert.equal(reason, 'Custom reason');
-          assert.equal(server.clientsCount, 0);
-          assert.equal(server.pendingClientsCount, 0);
-          done();
-        });
-      });
+
+      let {code, data} = await client.listener('disconnect').once();
+      assert.equal(code, 1000);
+      assert.equal(data, 'Custom reason');
+      assert.equal(server.clientsCount, 0);
+      assert.equal(server.pendingClientsCount, 0);
     });
 
-    it('Server socket destroy should set the active property on the socket to false', function (done) {
+    it('Server socket destroy should set the active property on the socket to false', async function () {
       portNumber++;
       server = socketClusterServer.listen(portNumber, {
         authKey: serverOptions.authKey,
@@ -1852,30 +1849,30 @@ describe('Integration tests', function () {
 
       var serverSocket;
 
-      server.on('connection', function (socket) {
-        serverSocket = socket;
-        assert.equal(socket.active, true);
-        setTimeout(function () {
+      (async () => {
+        for await (let socket of server.listener('connection')) {
+          serverSocket = socket;
+          assert.equal(socket.active, true);
+          await wait(100);
           socket.destroy();
-        }, 100);
+        }
+      })();
+
+      await server.listener('ready').once();
+      client = socketCluster.create({
+        hostname: clientOptions.hostname,
+        port: portNumber,
+        multiplex: false
       });
-      server.on('ready', function () {
-        client = socketCluster.create({
-          hostname: clientOptions.hostname,
-          port: portNumber,
-          multiplex: false
-        });
-        client.on('disconnect', function (code, reason) {
-          assert.equal(serverSocket.active, false);
-          done();
-        });
-      });
+
+      await client.listener('disconnect').once();
+      assert.equal(serverSocket.active, false);
     });
   });
 
   describe('Socket Ping/pong', function () {
-    describe('When when pingTimeoutDisabled is not set (false)', function () {
-      beforeEach('Launch server with ping options before start', function (done) {
+    describe('When when pingTimeoutDisabled is not set', function () {
+      beforeEach('Launch server with ping options before start', async function () {
         portNumber++;
         // Intentionally make pingInterval higher than pingTimeout, that
         // way the client will never receive a ping or send back a pong.
@@ -1885,9 +1882,8 @@ describe('Integration tests', function () {
           pingInterval: 2000,
           pingTimeout: 500
         });
-        server.on('ready', function () {
-          done();
-        });
+
+        await server.listener('ready').once();
       });
 
       afterEach('Shut down server afterwards', async function () {
@@ -1895,7 +1891,7 @@ describe('Integration tests', function () {
         server.close();
       });
 
-      it('Should disconnect socket if server does not receive a pong from client before timeout', function (done) {
+      it('Should disconnect socket if server does not receive a pong from client before timeout', async function () {
         client = socketCluster.create({
           hostname: clientOptions.hostname,
           port: portNumber,
@@ -1903,40 +1899,46 @@ describe('Integration tests', function () {
         });
 
         var serverWarning = null;
-        server.on('warning', function (err) {
-          serverWarning = err;
-        });
+        (async () => {
+          for await (let err of server.listener('warning')) {
+            serverWarning = err;
+          }
+        })();
 
         var serverDisconnectionCode = null;
-        server.on('disconnection', function (socket, code) {
-          serverDisconnectionCode = code;
-        });
+        (async () => {
+          for await (let packet of server.listener('disconnection')) {
+            serverDisconnectionCode = packet.code;
+          }
+        })();
 
         var clientError = null;
-        client.on('error', function (err) {
-          clientError = err;
-        });
+        (async () => {
+          for await (let err of client.listener('error')) {
+            clientError = err;
+          }
+        })();
 
         var clientDisconnectCode = null;
-        client.on('disconnect', function (code) {
-          clientDisconnectCode = code;
-        });
+        (async () => {
+          for await (let packet of client.listener('disconnect')) {
+            clientDisconnectCode = packet.code;
+          }
+        })();
 
-        setTimeout(function () {
-          assert.notEqual(clientError, null);
-          assert.equal(clientError.name, 'SocketProtocolError');
-          assert.equal(clientDisconnectCode, 4000);
+        await wait(1000);
+        assert.notEqual(clientError, null);
+        assert.equal(clientError.name, 'SocketProtocolError');
+        assert.equal(clientDisconnectCode, 4001);
 
-          assert.notEqual(serverWarning, null);
-          assert.equal(serverWarning.name, 'SocketProtocolError');
-          assert.equal(serverDisconnectionCode, 4001);
-          done();
-        }, 1000);
+        assert.notEqual(serverWarning, null);
+        assert.equal(serverWarning.name, 'SocketProtocolError');
+        assert.equal(serverDisconnectionCode, 4001);
       });
     });
 
     describe('When when pingTimeoutDisabled is true', function () {
-      beforeEach('Launch server with ping options before start', function (done) {
+      beforeEach('Launch server with ping options before start', async function () {
         portNumber++;
         // Intentionally make pingInterval higher than pingTimeout, that
         // way the client will never receive a ping or send back a pong.
@@ -1947,9 +1949,8 @@ describe('Integration tests', function () {
           pingTimeout: 500,
           pingTimeoutDisabled: true
         });
-        server.on('ready', function () {
-          done();
-        });
+
+        await server.listener('ready').once();
       });
 
       afterEach('Shut down server afterwards', async function () {
@@ -1957,7 +1958,7 @@ describe('Integration tests', function () {
         server.close();
       });
 
-      it('Should not disconnect socket if server does not receive a pong from client before timeout', function (done) {
+      it('Should not disconnect socket if server does not receive a pong from client before timeout', async function () {
         client = socketCluster.create({
           hostname: clientOptions.hostname,
           port: portNumber,
@@ -1966,33 +1967,39 @@ describe('Integration tests', function () {
         });
 
         var serverWarning = null;
-        server.on('warning', function (err) {
-          serverWarning = err;
-        });
+        (async () => {
+          for await (let err of server.listener('warning')) {
+            serverWarning = err;
+          }
+        })();
 
         var serverDisconnectionCode = null;
-        server.on('disconnection', function (socket, code) {
-          serverDisconnectionCode = code;
-        });
+        (async () => {
+          for await (let packet of server.listener('disconnection')) {
+            serverDisconnectionCode = packet.code;
+          }
+        })();
 
         var clientError = null;
-        client.on('error', function (err) {
-          clientError = err;
-        });
+        (async () => {
+          for await (let err of client.listener('error')) {
+            clientError = err;
+          }
+        })();
 
         var clientDisconnectCode = null;
-        client.on('disconnect', function (code) {
-          clientDisconnectCode = code;
-        });
+        (async () => {
+          for await (let packet of client.listener('disconnect')) {
+            clientDisconnectCode = packet.code;
+          }
+        })();
 
-        setTimeout(function () {
-          assert.equal(clientError, null);
-          assert.equal(clientDisconnectCode, null);
+        await wait(1000);
+        assert.equal(clientError, null);
+        assert.equal(clientDisconnectCode, null);
 
-          assert.equal(serverWarning, null);
-          assert.equal(serverDisconnectionCode, null);
-          done();
-        }, 1000);
+        assert.equal(serverWarning, null);
+        assert.equal(serverDisconnectionCode, null);
       });
     });
   });
@@ -2001,15 +2008,13 @@ describe('Integration tests', function () {
     var middlewareFunction;
     var middlewareWasExecuted = false;
 
-    beforeEach('Launch server without middleware before start', function (done) {
+    beforeEach('Launch server without middleware before start', async function () {
       portNumber++;
       server = socketClusterServer.listen(portNumber, {
         authKey: serverOptions.authKey,
         wsEngine: WS_ENGINE
       });
-      server.on('ready', function () {
-        done();
-      });
+      await server.listener('ready').once();
     });
 
     afterEach('Shut down server afterwards', async function () {
@@ -2018,10 +2023,9 @@ describe('Integration tests', function () {
     });
 
     describe('MIDDLEWARE_AUTHENTICATE', function () {
-      it('Should not run authenticate middleware if JWT token does not exist', function (done) {
-        middlewareFunction = function (req, next) {
+      it('Should not run authenticate middleware if JWT token does not exist', async function () {
+        middlewareFunction = async function (req) {
           middlewareWasExecuted = true;
-          next();
         };
         server.addMiddleware(server.MIDDLEWARE_AUTHENTICATE, middlewareFunction);
 
@@ -2031,18 +2035,15 @@ describe('Integration tests', function () {
           multiplex: false
         });
 
-        client.once('connect', function () {
-          assert.notEqual(middlewareWasExecuted, true);
-          done();
-        });
+        await client.listener('connect').once();
+        assert.notEqual(middlewareWasExecuted, true);
       });
 
-      it('Should run authenticate middleware if JWT token exists', function (done) {
+      it('Should run authenticate middleware if JWT token exists', async function () {
         global.localStorage.setItem('socketCluster.authToken', validSignedAuthTokenBob);
 
-        middlewareFunction = function (req, next) {
+        middlewareFunction = async function (req) {
           middlewareWasExecuted = true;
-          next();
         };
         server.addMiddleware(server.MIDDLEWARE_AUTHENTICATE, middlewareFunction);
 
@@ -2052,34 +2053,38 @@ describe('Integration tests', function () {
           multiplex: false
         });
 
-        client.invoke('login', {username: 'bob'});
-        client.once('authenticate', function (state) {
-          assert.equal(middlewareWasExecuted, true);
-          done();
-        });
+        (async () => {
+          try {
+            await client.invoke('login', {username: 'bob'});
+          } catch (err) {}
+        })();
+
+        await client.listener('authenticate').once();
+        assert.equal(middlewareWasExecuted, true);
       });
     });
 
     describe('MIDDLEWARE_HANDSHAKE_SC', function () {
-      it('Should trigger correct events if MIDDLEWARE_HANDSHAKE_SC blocks with an error', function (done) {
+      it('Should trigger correct events if MIDDLEWARE_HANDSHAKE_SC blocks with an error', async function () {
         var middlewareWasExecuted = false;
         var serverWarnings = [];
         var clientErrors = [];
         var abortStatus;
 
-        middlewareFunction = function (req, next) {
-          setTimeout(function () {
-            middlewareWasExecuted = true;
-            var err = new Error('SC handshake failed because the server was too lazy');
-            err.name = 'TooLazyHandshakeError';
-            next(err);
-          }, 100);
+        middlewareFunction = async function (req) {
+          await wait(100);
+          middlewareWasExecuted = true;
+          var err = new Error('SC handshake failed because the server was too lazy');
+          err.name = 'TooLazyHandshakeError';
+          throw err;
         };
         server.addMiddleware(server.MIDDLEWARE_HANDSHAKE_SC, middlewareFunction);
 
-        server.on('warning', function (err) {
-          serverWarnings.push(err);
-        });
+        (async () => {
+          for await (let err of server.listener('warning')) {
+            serverWarnings.push(err);
+          }
+        })();
 
         client = socketCluster.create({
           hostname: clientOptions.hostname,
@@ -2087,39 +2092,39 @@ describe('Integration tests', function () {
           multiplex: false
         });
 
-        client.on('error', function (err) {
-          clientErrors.push(err);
-        });
+        (async () => {
+          for await (let err of client.listener('error')) {
+            clientErrors.push(err);
+          }
+        })();
 
-        client.once('connectAbort', function (status, reason) {
-          abortStatus = status;
-        });
+        (async () => {
+          let packet = await client.listener('connectAbort').once();
+          abortStatus = packet.code;
+        })();
 
-        setTimeout(function () {
-          assert.equal(middlewareWasExecuted, true);
-          assert.notEqual(clientErrors[0], null);
-          assert.equal(clientErrors[0].name, 'TooLazyHandshakeError');
-          assert.notEqual(clientErrors[1], null);
-          assert.equal(clientErrors[1].name, 'SocketProtocolError');
-          assert.notEqual(serverWarnings[0], null);
-          assert.equal(serverWarnings[0].name, 'TooLazyHandshakeError');
-          assert.notEqual(abortStatus, null);
-          done();
-        }, 200);
+        await wait(200);
+        assert.equal(middlewareWasExecuted, true);
+        assert.notEqual(clientErrors[0], null);
+        assert.equal(clientErrors[0].name, 'TooLazyHandshakeError');
+        assert.notEqual(clientErrors[1], null);
+        assert.equal(clientErrors[1].name, 'SocketProtocolError');
+        assert.notEqual(serverWarnings[0], null);
+        assert.equal(serverWarnings[0].name, 'TooLazyHandshakeError');
+        assert.notEqual(abortStatus, null);
       });
 
-      it('Should send back default 4008 status code if MIDDLEWARE_HANDSHAKE_SC blocks without providing a status code', function (done) {
+      it('Should send back default 4008 status code if MIDDLEWARE_HANDSHAKE_SC blocks without providing a status code', async function () {
         var middlewareWasExecuted = false;
         var abortStatus;
         var abortReason;
 
-        middlewareFunction = function (req, next) {
-          setTimeout(function () {
-            middlewareWasExecuted = true;
-            var err = new Error('SC handshake failed because the server was too lazy');
-            err.name = 'TooLazyHandshakeError';
-            next(err);
-          }, 100);
+        middlewareFunction = async function (req) {
+          await wait(100);
+          middlewareWasExecuted = true;
+          var err = new Error('SC handshake failed because the server was too lazy');
+          err.name = 'TooLazyHandshakeError';
+          throw err;
         };
         server.addMiddleware(server.MIDDLEWARE_HANDSHAKE_SC, middlewareFunction);
 
@@ -2128,37 +2133,34 @@ describe('Integration tests', function () {
           port: portNumber,
           multiplex: false
         });
-        client.on('error', function () {});
 
-        client.once('connectAbort', function (status, reason) {
-          abortStatus = status;
-          abortReason = reason;
-        });
+        (async () => {
+          let packet = await client.listener('connectAbort').once();
+          abortStatus = packet.code;
+          abortReason = packet.data;
+        })();
 
-        setTimeout(function () {
-          assert.equal(middlewareWasExecuted, true);
-          assert.equal(abortStatus, 4008);
-          assert.equal(abortReason, 'TooLazyHandshakeError: SC handshake failed because the server was too lazy');
-          done();
-        }, 200);
+        await wait(200);
+        assert.equal(middlewareWasExecuted, true);
+        assert.equal(abortStatus, 4008);
+        assert.equal(abortReason, 'TooLazyHandshakeError: SC handshake failed because the server was too lazy');
       });
 
-      it('Should send back custom status code if MIDDLEWARE_HANDSHAKE_SC blocks by providing a status code', function (done) {
+      it('Should send back custom status code if MIDDLEWARE_HANDSHAKE_SC blocks by providing a status code', async function () {
         var middlewareWasExecuted = false;
         var abortStatus;
         var abortReason;
 
-        middlewareFunction = function (req, next) {
-          setTimeout(function () {
-            middlewareWasExecuted = true;
-            var err = new Error('SC handshake failed because of invalid query auth parameters');
-            err.name = 'InvalidAuthQueryHandshakeError';
-
-            // Pass custom 4501 status code as the second argument to the next() function.
-            // We will treat this code as a fatal authentication failure on the front end.
-            // A status code of 4500 or higher means that the client shouldn't try to reconnect.
-            next(err, 4501);
-          }, 100);
+        middlewareFunction = async function (req) {
+          await wait(100);
+          middlewareWasExecuted = true;
+          var err = new Error('SC handshake failed because of invalid query auth parameters');
+          err.name = 'InvalidAuthQueryHandshakeError';
+          // Set custom 4501 status code as a property of the error.
+          // We will treat this code as a fatal authentication failure on the front end.
+          // A status code of 4500 or higher means that the client shouldn't try to reconnect.
+          err.statusCode = 4501;
+          throw err;
         };
         server.addMiddleware(server.MIDDLEWARE_HANDSHAKE_SC, middlewareFunction);
 
@@ -2167,31 +2169,27 @@ describe('Integration tests', function () {
           port: portNumber,
           multiplex: false
         });
-        client.on('error', function () {});
 
-        client.once('connectAbort', function (status, reason) {
-          abortStatus = status;
-          abortReason = reason;
-        });
+        (async () => {
+          let packet = await client.listener('connectAbort').once();
+          abortStatus = packet.code;
+          abortReason = packet.data;
+        })();
 
-        setTimeout(function () {
-          assert.equal(middlewareWasExecuted, true);
-          assert.equal(abortStatus, 4501);
-          assert.equal(abortReason, 'InvalidAuthQueryHandshakeError: SC handshake failed because of invalid query auth parameters');
-          done();
-        }, 200);
+        await wait(200);
+        assert.equal(middlewareWasExecuted, true);
+        assert.equal(abortStatus, 4501);
+        assert.equal(abortReason, 'InvalidAuthQueryHandshakeError: SC handshake failed because of invalid query auth parameters');
       });
 
-      it('Should connect with a delay if next() is called after a timeout inside the middleware function', function (done) {
+      it('Should connect with a delay if next() is called after a timeout inside the middleware function', async function () {
         var createConnectionTime = null;
         var connectEventTime = null;
         var abortStatus;
         var abortReason;
 
-        middlewareFunction = function (req, next) {
-          setTimeout(function () {
-            next();
-          }, 500);
+        middlewareFunction = async function (req) {
+          await wait(500);
         };
         server.addMiddleware(server.MIDDLEWARE_HANDSHAKE_SC, middlewareFunction);
 
@@ -2202,15 +2200,15 @@ describe('Integration tests', function () {
           multiplex: false
         });
 
-        client.once('connectAbort', function (status, reason) {
-          abortStatus = status;
-          abortReason = reason;
-        });
-        client.once('connect', function () {
-          connectEventTime = Date.now();
-          assert.equal(connectEventTime - createConnectionTime > 400, true);
-          done();
-        });
+        (async () => {
+          let packet = await client.listener('connectAbort').once();
+          abortStatus = packet.code;
+          abortReason = packet.data;
+        })();
+
+        await client.listener('connect').once();
+        connectEventTime = Date.now();
+        assert.equal(connectEventTime - createConnectionTime > 400, true);
       });
     });
   });
