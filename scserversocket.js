@@ -70,7 +70,7 @@ let SCServerSocket = function (id, server, socket) {
   this.socket.on('message', (message, flags) => {
     this._resetPongTimeout();
 
-    this.emit('message', message);
+    this.emit('message', {message});
 
     let obj;
     try {
@@ -200,7 +200,7 @@ SCServerSocket.prototype._handleTransmittedEventObject = function (obj, message)
     }
   } else {
     // The last remaining case is to treat the message as raw
-    this.emit('raw', message);
+    this.emit('raw', {message});
   }
 };
 
@@ -233,7 +233,7 @@ SCServerSocket.prototype.emitError = function (error) {
   });
 };
 
-SCServerSocket.prototype._onSCClose = function (code, data) {
+SCServerSocket.prototype._onSCClose = function (code, reason) {
   clearInterval(this._pingIntervalTicker);
   clearTimeout(this._pingTimeoutTicker);
 
@@ -243,26 +243,26 @@ SCServerSocket.prototype._onSCClose = function (code, data) {
 
     if (prevState === this.CONNECTING) {
       // Private connectAbort event for internal use only
-      this.emit('connectAbort', {code, data});
+      this.emit('connectAbort', {code, reason});
     } else {
       // Private disconnect event for internal use only
-      this.emit('disconnect', {code, data});
+      this.emit('disconnect', {code, reason});
     }
     // Private close event for internal use only
-    this.emit('close', {code, data});
+    this.emit('close', {code, reason});
 
     if (!SCServerSocket.ignoreStatuses[code]) {
       let closeMessage;
-      if (data) {
+      if (reason) {
         let reasonString;
-        if (typeof data === 'object') {
+        if (typeof reason === 'object') {
           try {
-            reasonString = JSON.stringify(data);
+            reasonString = JSON.stringify(reason);
           } catch (error) {
-            reasonString = data.toString();
+            reasonString = reason.toString();
           }
         } else {
-          reasonString = data;
+          reasonString = reason;
         }
         closeMessage = 'Socket connection closed with status code ' + code + ' and reason: ' + reasonString;
       } else {

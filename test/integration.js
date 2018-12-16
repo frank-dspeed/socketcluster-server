@@ -1018,7 +1018,7 @@ describe('Integration tests', function () {
           let packet = await socket.listener('connectAbort').once();
           clientSocketAborted = true;
           assert.equal(packet.code, 4444);
-          assert.equal(packet.data, 'Disconnect before handshake'); // TODO 2: packet.data -> packet.reason?
+          assert.equal(packet.reason, 'Disconnect before handshake');
         })();
       })();
 
@@ -1091,7 +1091,7 @@ describe('Integration tests', function () {
           }
           socketDisconnected = true;
           assert.equal(packet.code, 4445);
-          assert.equal(packet.data, 'Disconnect after handshake');
+          assert.equal(packet.reason, 'Disconnect after handshake');
         })();
 
         (async () => {
@@ -1161,7 +1161,7 @@ describe('Integration tests', function () {
           let packet = await socket.listener('close').once();
           serverSocketClosed = true;
           assert.equal(packet.code, 4444);
-          assert.equal(packet.data, 'Disconnect before handshake');
+          assert.equal(packet.reason, 'Disconnect before handshake');
         }
       })();
 
@@ -1223,7 +1223,7 @@ describe('Integration tests', function () {
           let packet = await socket.listener('close').once();
           serverSocketClosed = true;
           assert.equal(packet.code, 4445);
-          assert.equal(packet.data, 'Disconnect after handshake');
+          assert.equal(packet.reason, 'Disconnect after handshake');
         }
       })();
 
@@ -1264,9 +1264,9 @@ describe('Integration tests', function () {
           var isFirstMessage = true;
 
           (async () => {
-            for await (let rawMessage of socket.listener('message')) {
+            for await (let {message} of socket.listener('message')) {
               if (isFirstMessage) {
-                var data = JSON.parse(rawMessage);
+                var data = JSON.parse(message);
                 // All 20 subscriptions should arrive as a single message.
                 assert.equal(data.length, 20);
                 isFirstMessage = false;
@@ -1598,7 +1598,7 @@ describe('Integration tests', function () {
       eventList.push({
         type: 'disconnect',
         code: packet.code,
-        reason: packet.data
+        reason: packet.reason
       });
 
       await wait(0);
@@ -1834,9 +1834,9 @@ describe('Integration tests', function () {
         multiplex: false
       });
 
-      let {code, data} = await client.listener('disconnect').once();
+      let {code, reason} = await client.listener('disconnect').once();
       assert.equal(code, 1000);
-      assert.equal(data, 'Custom reason');
+      assert.equal(reason, 'Custom reason');
       assert.equal(server.clientsCount, 0);
       assert.equal(server.pendingClientsCount, 0);
     });
@@ -2138,7 +2138,7 @@ describe('Integration tests', function () {
         (async () => {
           let packet = await client.listener('connectAbort').once();
           abortStatus = packet.code;
-          abortReason = packet.data;
+          abortReason = packet.reason;
         })();
 
         await wait(200);
@@ -2174,7 +2174,7 @@ describe('Integration tests', function () {
         (async () => {
           let packet = await client.listener('connectAbort').once();
           abortStatus = packet.code;
-          abortReason = packet.data;
+          abortReason = packet.reason;
         })();
 
         await wait(200);
@@ -2204,7 +2204,7 @@ describe('Integration tests', function () {
         (async () => {
           let packet = await client.listener('connectAbort').once();
           abortStatus = packet.code;
-          abortReason = packet.data;
+          abortReason = packet.reason;
         })();
 
         await client.listener('connect').once();
