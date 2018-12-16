@@ -252,15 +252,14 @@ SCServer.prototype._subscribeSocket = function (socket, channelOptions, callback
     socket.channelSubscriptionsCount++;
   }
 
-  this.brokerEngine.subscribeSocket(socket, channelName)
-  .then(() => {
-    return null;
-  })
-  .catch((err) => {
-    return err;
-  })
-  .then((err) => {
-    if (err) {
+  (async () => {
+    let error;
+    try {
+      await this.brokerEngine.subscribeSocket(socket, channelName);
+    } catch (err) {
+      error = err;
+    }
+    if (error) {
       delete socket.channelSubscriptions[channelName];
       socket.channelSubscriptionsCount--;
     } else {
@@ -274,8 +273,8 @@ SCServer.prototype._subscribeSocket = function (socket, channelOptions, callback
         subscribeOptions: channelOptions
       });
     }
-    callback && callback(err);
-  });
+    callback && callback(error);
+  })();
 };
 
 SCServer.prototype._unsubscribeSocketFromAllChannels = function (socket) {
@@ -407,14 +406,15 @@ SCServer.prototype._processAuthToken = function (scSocket, signedAuthToken, call
   }
 
   if (verifyTokenResult instanceof Promise) {
-    verifyTokenResult
-    .then((token) => {
-      return {token};
-    })
-    .catch((err) => {
-      return {error: err};
-    })
-    .then(handleVerifyTokenResult);
+    (async () => {
+      let result = {};
+      try {
+        result.token = await verifyTokenResult;
+      } catch (err) {
+        result.error = err;
+      }
+      handleVerifyTokenResult(result);
+    })();
   } else {
     var result = {
       token: verifyTokenResult,
@@ -886,19 +886,16 @@ SCServer.prototype._passThroughMiddleware = function (options, callback) {
                     callback(err, eventData, request.ackData);
                     return;
                   }
-                  this.exchange.publish(request.channel, request.data)
-                  .then(() => {
-                    return null;
-                  })
-                  .catch((err) => {
-                    return err;
-                  })
-                  .then((err) => {
-                    if (err) {
-                      this.emit('warning', err);
+                  (async () => {
+                    let error;
+                    try {
+                      await this.exchange.publish(request.channel, request.data);
+                    } catch (err) {
+                      error = err;
+                      this.emit('warning', error);
                     }
-                    callback(err, eventData, request.ackData);
-                  });
+                    callback(error, eventData, request.ackData);
+                  })();
                 }
               }
             }
