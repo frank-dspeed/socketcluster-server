@@ -89,13 +89,18 @@ function SCServer(options) {
 
   // Make sure there is always a leading and a trailing slash in the WS path.
   this._path = opts.path.replace(/\/?$/, '/').replace(/^\/?/, '/');
-  this.isReady = false;
 
-  // TODO 2: Implement StreamDemux in sc-broker and sc-broker-cluster.
-  this.brokerEngine.once('ready', () => {
+  if (this.brokerEngine.isReady) {
     this.isReady = true;
     this.emit('ready', {});
-  });
+  } else {
+    this.isReady = false;
+    (async () => {
+      await this.brokerEngine.listener('ready').once();
+      this.isReady = true;
+      this.emit('ready', {});
+    })();
+  }
 
   let wsEngine = typeof opts.wsEngine === 'string' ? require(opts.wsEngine) : opts.wsEngine;
   if (!wsEngine || !wsEngine.Server) {

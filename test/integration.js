@@ -1548,6 +1548,102 @@ describe('Integration tests', function () {
       assert.equal(eventList[1].channel, 'foo');
     });
 
+    it('When default SCSimpleBroker broker engine is used, scServer.exchange should support consuming data from a channel', async function () {
+      portNumber++;
+      server = socketClusterServer.listen(portNumber, {
+        authKey: serverOptions.authKey,
+        wsEngine: WS_ENGINE
+      });
+
+      await server.listener('ready').once();
+
+      client = socketCluster.create({
+        hostname: clientOptions.hostname,
+        port: portNumber,
+        multiplex: false
+      });
+
+      (async () => {
+        await client.listener('connect').once();
+
+        client.publish('foo', 'hi1');
+        await wait(10);
+        client.publish('foo', 'hi2');
+      })();
+
+      let receivedSubscribedData = [];
+      let receivedChannelData = [];
+
+      (async () => {
+        let subscription = server.exchange.subscribe('foo');
+        for await (let data of subscription) {
+          receivedSubscribedData.push(data);
+        }
+      })();
+
+      let channel = server.exchange.channel('foo');
+      for await (let data of channel) {
+        receivedChannelData.push(data);
+        if (receivedChannelData.length > 1) {
+          break;
+        }
+      }
+
+      assert.equal(server.exchange.isSubscribed('foo'), true);
+      assert.equal(server.exchange.subscriptions().join(','), 'foo');
+
+      assert.equal(receivedSubscribedData[0], 'hi1');
+      assert.equal(receivedSubscribedData[1], 'hi2');
+      assert.equal(receivedChannelData[0], 'hi1');
+      assert.equal(receivedChannelData[1], 'hi2');
+    });
+
+    it('When default SCSimpleBroker broker engine is used, scServer.exchange should support publishing data to a channel', async function () {
+      portNumber++;
+      server = socketClusterServer.listen(portNumber, {
+        authKey: serverOptions.authKey,
+        wsEngine: WS_ENGINE
+      });
+
+      await server.listener('ready').once();
+
+      client = socketCluster.create({
+        hostname: clientOptions.hostname,
+        port: portNumber,
+        multiplex: false
+      });
+
+      (async () => {
+        await client.listener('subscribe').once();
+        server.exchange.publish('bar', 'hello1');
+        await wait(10);
+        server.exchange.publish('bar', 'hello2');
+      })();
+
+      let receivedSubscribedData = [];
+      let receivedChannelData = [];
+
+      (async () => {
+        let subscription = client.subscribe('bar');
+        for await (let data of subscription) {
+          receivedSubscribedData.push(data);
+        }
+      })();
+
+      let channel = client.channel('bar');
+      for await (let data of channel) {
+        receivedChannelData.push(data);
+        if (receivedChannelData.length > 1) {
+          break;
+        }
+      }
+
+      assert.equal(receivedSubscribedData[0], 'hello1');
+      assert.equal(receivedSubscribedData[1], 'hello2');
+      assert.equal(receivedChannelData[0], 'hello1');
+      assert.equal(receivedChannelData[1], 'hello2');
+    });
+
     it('When disconnecting a socket, the unsubscribe event should trigger after the disconnect event', async function () {
       portNumber++;
       let customBrokerEngine = new SCSimpleBroker();
