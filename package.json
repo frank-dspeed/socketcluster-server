@@ -9,7 +9,7 @@
   },
   "dependencies": {
     "async": "2.3.0",
-    "async-stream-emitter": "^1.0.2",
+    "async-stream-emitter": "^1.1.0",
     "base64id": "1.0.0",
     "component-emitter": "1.2.1",
     "lodash.clonedeep": "4.5.0",

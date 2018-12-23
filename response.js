@@ -5,7 +5,7 @@ function Response(socket, id) {
   this.socket = socket;
   this.id = id;
   this.sent = false;
-};
+}
 
 Response.prototype._respond = function (responseData, options) {
   if (this.sent) {

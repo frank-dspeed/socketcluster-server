@@ -102,7 +102,7 @@ function SCServerSocket(id, server, socket) {
       }
     }
   });
-};
+}
 
 SCServerSocket.prototype = Object.create(AsyncStreamEmitter.prototype);
 

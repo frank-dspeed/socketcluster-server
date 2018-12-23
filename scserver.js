@@ -186,7 +186,7 @@ function SCServer(options) {
 
   this.wsServer.on('error', this._handleServerError.bind(this));
   this.wsServer.on('connection', this._handleSocketConnection.bind(this));
-};
+}
 
 SCServer.prototype = Object.create(AsyncStreamEmitter.prototype);
 
