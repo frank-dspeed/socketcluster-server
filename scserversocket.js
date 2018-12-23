@@ -1,5 +1,6 @@
 const cloneDeep = require('lodash.clonedeep');
 const StreamDemux = require('stream-demux');
+const AsyncStreamEmitter = require('async-stream-emitter');
 const Response = require('./response').Response;
 
 const scErrors = require('sc-errors');
@@ -11,6 +12,8 @@ const AuthError = scErrors.AuthError;
 
 
 function SCServerSocket(id, server, socket) {
+  AsyncStreamEmitter.call(this);
+
   this._autoAckRPCs = {
     '#publish': 1
   };
@@ -22,7 +25,6 @@ function SCServerSocket(id, server, socket) {
   this.authState = this.UNAUTHENTICATED;
   this.active = true;
 
-  this._listenerDemux = new StreamDemux();
   this._receiverDemux = new StreamDemux();
   this._procedureDemux = new StreamDemux();
 
@@ -102,6 +104,8 @@ function SCServerSocket(id, server, socket) {
   });
 };
 
+SCServerSocket.prototype = Object.create(AsyncStreamEmitter.prototype);
+
 SCServerSocket.CONNECTING = SCServerSocket.prototype.CONNECTING = 'connecting';
 SCServerSocket.OPEN = SCServerSocket.prototype.OPEN = 'open';
 SCServerSocket.CLOSED = SCServerSocket.prototype.CLOSED = 'closed';
@@ -126,18 +130,6 @@ SCServerSocket.prototype.procedure = function (procedureName) {
 
 SCServerSocket.prototype.closeProcedure = function (procedureName) {
   this._procedureDemux.close(procedureName);
-};
-
-SCServerSocket.prototype.listener = function (eventName) {
-  return this._listenerDemux.stream(eventName);
-};
-
-SCServerSocket.prototype.closeListener = function (eventName) {
-  this._listenerDemux.close(eventName);
-};
-
-SCServerSocket.prototype.emit = function (eventName, data) {
-  this._listenerDemux.write(eventName, data);
 };
 
 SCServerSocket.prototype._sendPing = function () {

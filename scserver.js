@@ -7,7 +7,7 @@ const url = require('url');
 const crypto = require('crypto');
 const uuid = require('uuid');
 const SCSimpleBroker = require('sc-simple-broker').SCSimpleBroker;
-const StreamDemux = require('stream-demux');
+const AsyncStreamEmitter = require('async-stream-emitter');
 
 const scErrors = require('sc-errors');
 const AuthTokenExpiredError = scErrors.AuthTokenExpiredError;
@@ -23,6 +23,8 @@ const ServerProtocolError = scErrors.ServerProtocolError;
 
 
 function SCServer(options) {
+  AsyncStreamEmitter.call(this);
+
   let opts = {
     brokerEngine: new SCSimpleBroker(),
     wsEngine: 'ws',
@@ -45,7 +47,6 @@ function SCServer(options) {
   };
 
   this.options = Object.assign(opts, options);
-  this._listenerDemux = new StreamDemux();
 
   this.MIDDLEWARE_HANDSHAKE_WS = 'handshakeWS';
   this.MIDDLEWARE_HANDSHAKE_SC = 'handshakeSC';
@@ -187,17 +188,7 @@ function SCServer(options) {
   this.wsServer.on('connection', this._handleSocketConnection.bind(this));
 };
 
-SCServer.prototype.listener = function (eventName) {
-  return this._listenerDemux.stream(eventName);
-};
-
-SCServer.prototype.closeListener = function (eventName) {
-  this._listenerDemux.close(eventName);
-};
-
-SCServer.prototype.emit = function (eventName, data) {
-  this._listenerDemux.write(eventName, data);
-};
+SCServer.prototype = Object.create(AsyncStreamEmitter.prototype);
 
 SCServer.prototype.setAuthEngine = function (authEngine) {
   this.auth = authEngine;
